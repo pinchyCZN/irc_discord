@@ -213,9 +213,8 @@ int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload)
 			break;
 		}
 		if(result){
-			dump_hex(header,sizeof(header));
-			printf("WS payload is final%i:\n",payload->is_final);
-			dump_hex(payload->data,payload->len);
+			//dump_hex(header,sizeof(header));
+			//dump_hex(payload->data,payload->len);
 			break;
 		}
 		if(fail){
@@ -289,24 +288,36 @@ int send_identify(ssl_context *ssl)
 	printf("sending ident:\n%.*s\n",buf_len,buf);
 	return result;
 }
+int send_heartbeat(ssl_context *ssl)
+{
+	int result=FALSE;
+	return result;
+}
 
 int process_payload(CONNECTION *con,BYTE *data,int data_len)
 {
 	int result=FALSE;
 	int opcode=-1;
-	char tmp[80]={0};
 	ssl_context *ssl;
-	int res;
 	JSON_Value *root;
+	JSON_Object *obj;
+	JSON_Value *val;
+	double x;
 	ssl=&con->ssl;
 	//{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":41250,"_trace":["[\"gateway-prd-main-g8rb\",{\"micros\":0.0}]"]}}
-	printf("%.*s\n",data_len,data);
+	//printf("%.*s\n",data_len,data);
 	root=json_parse_string(data);
-	if(0==root){
+	if(json_value_get_type(root)!=JSONObject){
+		json_value_free(root);
 		printf("Error paring json\n");
 		return result;
 	}
-	//root->v
+	obj=json_value_get_object(root);
+	val=json_object_get_value(obj,"op");
+	x=json_value_get_number(val);
+	opcode=(int)x;
+	json_value_free(root);
+
 	switch(opcode){
 	case 0: //process incoming command
 		break;
@@ -316,11 +327,13 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len)
 		send_identify(ssl);
 		break;
 	case 11: //hrtbt ack
+		send_heartbeat(ssl);
 		break;
 	default:
 		printf("unhandled opcode:%i\n",opcode);
 		break;
 	}
+
 	result=TRUE;
 	return result;
 }
