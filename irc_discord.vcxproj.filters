@@ -1,0 +1,174 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="polarssl">
+      <UniqueIdentifier>{3764e0fe-945c-401f-be81-67af93e4d6d5}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="polarssl\library\aes.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\arc4.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\asn1parse.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\base64.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\bignum.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\camellia.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\certs.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\cipher.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\cipher_wrap.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\ctr_drbg.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\debug.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\des.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\dhm.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\entropy.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\entropy_poll.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\error.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\havege.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\md.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\md_wrap.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\md2.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\md4.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\md5.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\net.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\padlock.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\pem.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\pkcs11.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\rsa.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\sha1.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\sha2.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\sha4.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\ssl_cli.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\ssl_srv.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\ssl_tls.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\timing.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\version.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\x509parse.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="polarssl\library\xtea.c">
+      <Filter>polarssl</Filter>
+    </ClCompile>
+    <ClCompile Include="gateway.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="libstring.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="json.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="network.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="config.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="parson.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="libstring.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="json.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="network.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gateway.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="parson.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
