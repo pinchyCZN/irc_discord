@@ -86,15 +86,18 @@ int handle_connection(SOCKET s)
 		if(res<=0){
 			break;
 		}
-		printf("line:%s",line);
+		printf("RECV:%s",line);
 		switch(state){
 		case 0:
 			if(startswithi(line,"USER ")){
-				state=1;
 				sscanf(line,"%*s%79s",name);
 				send_motd(s,nick);
 			}else if(startswithi(line,"NICK ")){
-				sscanf(line,"%79s",nick);
+				sscanf(line,"%*s%79s",nick);
+			}
+			if(nick[0]!=0 && name[0]!=0){
+				printf("nick=%s name=%s\n",nick,name);
+				state=1;
 			}
 			break;
 		case 1:
