@@ -24,4 +24,4 @@ const char *strstri(const char *str,const char *substr);
 
 int startswithi(const char *str,const char *substr);
 
-int null_str(BYTE **data,int data_len);
+int null_str(unsigned char **data,int data_len);

@@ -1,5 +1,4 @@
 #include <Windows.h>
-//#include <string.h>
 #include <stdio.h>
 
 #pragma warning(disable:4996)
@@ -8,7 +7,6 @@ char g_token[512]={0};
 char g_gateway[80]={0};
 int g_timeout=50000;
 
-HANDLE g_gwevent;
 CRITICAL_SECTION g_mutex;
 
 #define INI_FNAME L"irc_discord.ini"
@@ -146,6 +144,20 @@ const char *get_password()
 	memset(password,0,sizeof(password));
 	get_ini_value(L"SETTINGS",L"PASSWORD",password,sizeof(password));
 	return password;
+}
+
+int get_irc_port()
+{
+	const int default_port=6667;
+	int result=default_port;
+	static char tmp[80]={0};
+	get_ini_value(L"SETTINGS",L"IRC_PORT",tmp,sizeof(tmp));
+	if(tmp[0]!=0){
+		result=atoi(tmp);
+		if(result<=0)
+			result=default_port;
+	}
+	return result;
 }
 
 int validate_ini(int show_msgbox)

@@ -1,0 +1,1 @@
+void irc_thread(void *args);

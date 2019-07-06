@@ -132,6 +132,7 @@
   <ItemGroup>
     <ClCompile Include="config.c" />
     <ClCompile Include="gateway.c" />
+    <ClCompile Include="irc_server.c" />
     <ClCompile Include="json.c" />
     <ClCompile Include="libstring.c" />
     <ClCompile Include="main.c" />
@@ -178,6 +179,7 @@
   <ItemGroup>
     <ClInclude Include="config.h" />
     <ClInclude Include="gateway.h" />
+    <ClInclude Include="irc_server.h" />
     <ClInclude Include="json.h" />
     <ClInclude Include="libstring.h" />
     <ClInclude Include="network.h" />

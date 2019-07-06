@@ -5,6 +5,13 @@
 #include "json.h"
 #include "parson.h"
 
+static HANDLE g_gwevent=0;
+
+enum{
+	GW_LOGIN=0,
+	GW_WAIT,
+};
+
 typedef struct{
 	int opcode;
 	int is_final;
@@ -142,7 +149,7 @@ int login_gateway(CONNECTION *c)
 
 
 
-int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload)
+int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 {
 	int result=FALSE;
 	BYTE header[32]={0};
@@ -163,6 +170,9 @@ int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload)
 				is_masked=(header[1] & 0x80) != 0;
 				offset=2;
 				state=1;
+			}else if(0==res){
+				*timeout=TRUE;
+				fail=TRUE;
 			}else{
 				fail=TRUE;
 			}
@@ -193,6 +203,7 @@ int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload)
 						payload->data=tmp;
 						payload->len=payload_size;
 					}else{
+						free(tmp);
 						state=0;
 						fail=TRUE;
 					}
@@ -253,15 +264,22 @@ int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
 	BYTE hdr[16]={0};
 	BYTE *tmp;
 	int payload_size;
+	int header_size=0;
 	hdr[0]=0x80|(opcode&0xF);
-	hdr[1]=0x80|0x7E;
-	hdr[2]=data_len>>8;
-	hdr[3]=data_len&0xFF;
-	payload_size=8+data_len;
+	if(data_len<126){
+		header_size=4+2;
+		hdr[1]=0x80|data_len;
+	}else{
+		header_size=4+4;
+		hdr[1]=0x80|0x7E;
+		hdr[2]=data_len>>8;
+		hdr[3]=data_len&0xFF;
+	}
+	payload_size=header_size+data_len;
 	tmp=(BYTE*)calloc(payload_size,1);
 	if(tmp){
-		memcpy(tmp,hdr,8);
-		memcpy(tmp+8,data,data_len);
+		memcpy(tmp,hdr,header_size);
+		memcpy(tmp+header_size,data,data_len);
 		result=send_data(ssl,tmp,payload_size);
 		free(tmp);
 	}
@@ -286,15 +304,30 @@ int send_identify(ssl_context *ssl)
 	slen=strlen(buf);
 	result=send_ws_payload(ssl,1,(BYTE*)buf,slen);
 	printf("sending ident:\n%.*s\n",buf_len,buf);
+	free(buf);
 	return result;
 }
-int send_heartbeat(ssl_context *ssl)
+int send_heartbeat(ssl_context *ssl,int seq_num)
 {
 	int result=FALSE;
+	char *buf=0;
+	int buf_len=0;
+	int slen;
+	if(0==seq_num)
+		append_printf(&buf,&buf_len,"{\"op\":1,\"d\":null}");
+	else
+		append_printf(&buf,&buf_len,"{\"op\":1,\"d\":%u}",seq_num);
+	if(0==buf){
+		return result;
+	}
+	slen=strlen(buf);
+	result=send_ws_payload(ssl,1,(BYTE*)buf,slen);
+	printf("sending heartbeat:\n%.*s\n",buf_len,buf);
+	free(buf);
 	return result;
 }
 
-int process_payload(CONNECTION *con,BYTE *data,int data_len)
+int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 {
 	int result=FALSE;
 	int opcode=-1;
@@ -316,18 +349,27 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len)
 	val=json_object_get_value(obj,"op");
 	x=json_value_get_number(val);
 	opcode=(int)x;
+
+	if(json_object_has_value_of_type(obj,"s",JSONNumber)){
+		val=json_object_get_value(obj,"s");
+		x=json_value_get_number(val);
+		*seq_num=(int)x;
+	}
+	printf("process payload:\n%.*s\n",data_len,data);
 	json_value_free(root);
 
 	switch(opcode){
 	case 0: //process incoming command
+		printf("disc op 0\n");
 		break;
 	case 9: //session invalidated
+		printf("disc op 9 session invalid\n");
 		break;
 	case 10: //hello
 		send_identify(ssl);
 		break;
 	case 11: //hrtbt ack
-		send_heartbeat(ssl);
+		printf("recv heartbeat\n");
 		break;
 	default:
 		printf("unhandled opcode:%i\n",opcode);
@@ -338,30 +380,87 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len)
 	return result;
 }
 
-int send_ping(ssl_context *ssl,BYTE *data,int data_len)
+int send_pong(ssl_context *ssl,BYTE *data,int data_len)
 {
 	int result=FALSE;
-	printf("sending ping\n");
-	//send_data(ssl,data,data_len);
-	send_ws_payload(ssl,9,data,data_len);
+	printf("sending pong\n");
+	send_ws_payload(ssl,10,data,data_len);
 	return result;
 }
 
+int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,int *error_count,int *seq_num)
+{
+	int result=FALSE;
+	int res;
+	WS_PAYLOAD payload={0};
+	BYTE *tmp=*buf;
+	int tmp_size=*buf_size;
+	int timeout=FALSE;
+	ssl_context *ssl;
+	ssl=&con->ssl;
+	res=get_ws_payload(ssl,&payload,&timeout);
+	if(!res){
+		if(!timeout){
+			(*error_count)++;
+		}else{
+			printf("timeout\n");
+		}
+		return result;
+	}
+	{
+		int opcode;
+		opcode=payload.opcode;
+		printf("ws opcode=%i\n",opcode);
+		switch(opcode){
+		case 0: // text packet
+		case 1: // binary packet
+		case 2: // continuation
+			append_data(&tmp,&tmp_size,payload.data,payload.len);
+			if(payload.is_final){
+				null_str(&tmp,tmp_size);
+				process_payload(con,tmp,tmp_size,seq_num);
+				free(tmp);
+				tmp=0;
+				tmp_size=0;
+			}
+			break;
+		case 8: // close
+			printf("%.*s\n",payload.len,payload.data);
+			SetEvent(g_gwevent);
+			*state=GW_LOGIN;
+			*exit_ws=TRUE;
+			Sleep(500000);
+			break;
+		case 9: // ping
+			send_pong(ssl,payload.data,payload.len);
+			break;
+		default:
+			printf("unhandled opcode %i\n",opcode);
+			break;
+		}
+		if(payload.data){
+			free(payload.data);
+		}
+	}
+	*buf=tmp;
+	*buf_size=tmp_size;
+	return result;
+}
 
 void gateway_thread(void *args)
 {
 	CONNECTION con={0};
-	enum{
-		GW_LOGIN=0,
-		GW_WAIT,
-	};
 	int state=0;
 	if(NULL==g_gwevent){
-		printf("gateway event not created\n");
-		return;
+		g_gwevent=CreateEventA(NULL,FALSE,FALSE,"GatewayEvent");
+		if(NULL==g_gwevent){
+			printf("gateway event not created\n");
+			return;
+		}
 	}
 	while(1){
 		DWORD res;
+		printf("waiting for gateway event\n");
 		res=WaitForSingleObject(g_gwevent,INFINITE);
 		if(WAIT_OBJECT_0==res){
 			switch(state){
@@ -373,55 +472,35 @@ void gateway_thread(void *args)
 					printf("gateway login\n");
 					res=login_gateway(&con);
 					if(res){
-						BYTE *complete_payload=0;
+						BYTE *payload=0;
 						int payload_size=0;
 						int exit_ws=FALSE;
 						int error_count=0;
+						int seq_num=0;
+						DWORD tick;
+						tick=GetTickCount();
+						con.ssl.read_timeout=2;
 						while(1){
-							WS_PAYLOAD payload={0};
-							res=get_ws_payload(&con.ssl,&payload);
-							if(!res){
-								error_count++;
-								if(error_count>5)
-									break;
+							process_ws(&con,&payload,&payload_size,&exit_ws,&state,&error_count,&seq_num);
+							printf("done process ws\n");
+							if(!exit_ws){
+								DWORD delta;
+								delta=GetTickCount()-tick;
+								if(delta>4000){
+									res=send_heartbeat(&con.ssl,seq_num);
+									tick=GetTickCount();
+									if(!res)
+										exit_ws=TRUE;
+								}else{
+									Sleep(1000);
+								}
 							}
-							{
-								int opcode;
-								opcode=payload.opcode;
-								printf("opcode=%i\n",opcode);
-								switch(opcode){
-								case 0: // text packet
-								case 1: // binary packet
-								case 2: // continuation
-									append_data(&complete_payload,&payload_size,payload.data,payload.len);
-									if(payload.is_final){
-										null_str(&complete_payload,payload_size);
-										process_payload(&con,complete_payload,payload_size);
-										free(complete_payload);
-										complete_payload=0;
-										payload_size=0;
-									}
-									break;
-								case 8: // close
-									printf("%.*s\n",payload.len,payload.data);
-									SetEvent(g_gwevent);
-									state=GW_LOGIN;
-									exit_ws=TRUE;
-									Sleep(500000);
-									break;
-								case 9: // ping
-									send_ping(&con.ssl,payload.data,payload.len);
-									break;
-								default:
-									printf("unhandled opcode %i\n",opcode);
-									break;
-								}
-								if(payload.data){
-									free(payload.data);
-								}
-								memset(&payload,0,sizeof(payload));
+							if(error_count>5){
+								printf("error count exceeded\n");
+								break;
 							}
 							if(exit_ws){
+								printf("exit ws\n");
 								break;
 							}
 						}
@@ -434,4 +513,12 @@ void gateway_thread(void *args)
 			Sleep(1000);
 		}
 	}
+}
+
+int trigger_gateway()
+{
+	if(g_gwevent){
+		SetEvent(g_gwevent);
+	}
+	return TRUE;
 }

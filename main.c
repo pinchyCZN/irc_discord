@@ -11,6 +11,7 @@
 #include "network.h"
 #include "config.h"
 #include "gateway.h"
+#include "irc_server.h"
 
 #pragma warning(disable:4996)
 
@@ -578,7 +579,7 @@ void discord_thread(void *args)
 		case DISC_GET_GATEWAY:
 			if(get_gateway(&con)){
 				state=DISC_WAIT_CMD;
-				SetEvent(g_gwevent);
+				trigger_gateway();
 			}else{
 				close_connection(&con);
 				state=DISC_CONNECT;
@@ -605,26 +606,12 @@ int do_wait()
 	}
 	return 0;
 }
-int print_json(JSON *json)
-{
-	while(json){
-		if(json->type==JSON_NODE && json->ptr){
-			printf("%.*s\n",json->key_len,json->key);
-			print_json((JSON*)json->ptr);
-		}
-		else
-			printf("key=%.*s value=%.*s\n",json->key_len,json->key,json->value_len,json->value);
-		json=(JSON*)json->next;
-	}
-	return 0;
-}
 
 int main(int argc,char **argv)
 {
-	InitializeCriticalSection(&g_mutex);
-	g_gwevent=CreateEventA(NULL,FALSE,FALSE,"GatewayEvent");
-	_beginthread(&gateway_thread,0,NULL);
-	_beginthread(&discord_thread,0,NULL);
+	//_beginthread(&gateway_thread,0,NULL);
+	//_beginthread(&discord_thread,0,NULL);
+	_beginthread(&irc_thread,0,NULL);
 	do_wait();
 	return 0;
 }

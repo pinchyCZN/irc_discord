@@ -7,10 +7,10 @@
 #include "polarssl/ctr_drbg.h"
 #include "polarssl/error.h"
 
-typedef SOCKET			socket_t;
+typedef unsigned int SOCKET;
 
 typedef struct{
-	socket_t sock;
+	SOCKET sock;
 	ssl_context ssl;
 }CONNECTION;
 
@@ -21,8 +21,8 @@ int ssl_connect(ssl_context *ssl,const int options,const char *host,const int po
 
 int read_line(ssl_context *ssl,char **line,int *line_len,int timeout);
 
-int recv_data(ssl_context *ssl,BYTE *data,int len);
+int recv_data(ssl_context *ssl,unsigned char *data,int len);
 
-int send_data(ssl_context *ssl,BYTE *data,int len);
+int send_data(ssl_context *ssl,unsigned char *data,int len);
 
 int drain_response(ssl_context *ssl);

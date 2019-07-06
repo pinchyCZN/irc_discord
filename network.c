@@ -203,6 +203,7 @@ int send_data(ssl_context *ssl,BYTE *data,int len)
 				break;
 			}
 		}else if(POLARSSL_ERR_NET_WANT_WRITE==res){
+			printf("want write\n");
 			Sleep(10);
 		}else{
 			break;
@@ -232,3 +233,4 @@ int drain_response(ssl_context *ssl)
 	}
 	return TRUE;
 }
+
