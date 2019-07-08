@@ -7,7 +7,7 @@
 
 
 #include "libstring.h"
-#include "json.h"
+#include "parson.h"
 #include "network.h"
 #include "config.h"
 #include "gateway.h"
@@ -15,7 +15,208 @@
 
 #pragma warning(disable:4996)
 
+typedef struct{
+	char *msg;
+	char *id;
+	char *author;
+	char *auth_id;
+	char *timestamp;
+}MESSAGE;
+typedef struct{
+	MESSAGE *m;
+	int count;
+}MESSAGE_LIST;
+typedef struct{
+	char *name;
+	char *topic;
+	char *id;
+	MESSAGE_LIST msgs;
+}CHANNEL;
+typedef struct{
+	CHANNEL *chan;
+	int count;
+}CHANNEL_LIST;
+typedef struct{
+	char *name;
+	char *id;
+	CHANNEL_LIST channels;
+}GUILD;
+typedef struct{
+	GUILD *guild;
+	int count;
+}GUILD_LIST;
 
+static GUILD_LIST g_guild_list={0};
+
+static int add_guild(GUILD_LIST *glist,GUILD *g)
+{
+	int result=FALSE;
+	int count,index;
+	int size;
+	GUILD *ptr;
+	char *id;
+	char *name;
+	id=strdup(g->id);
+	name=strdup(g->name);
+	if(0==id || 0==name){
+		goto ERROR_ADD_GUILD;
+	}
+	count=glist->count;
+	index=count;
+	count++;
+	size=sizeof(GUILD)*count;
+	ptr=realloc(glist->guild,size);
+	if(ptr){
+		GUILD *tmp=&ptr[index];
+		memset(tmp,0,sizeof(GUILD));
+		memcpy(&tmp->channels,&g->channels,sizeof(tmp->channels));
+		tmp->id=id;
+		tmp->name=name;
+		glist->count=count;
+		glist->guild=ptr;
+		result=TRUE;
+	}
+ERROR_ADD_GUILD:
+	if(!result){
+		free(id);
+		free(name);
+	}
+	return result;
+}
+
+static int add_channel(CHANNEL_LIST *clist,CHANNEL *chan)
+{
+	int result=FALSE;
+	int count,index;
+	CHANNEL *ptr;
+	int size;
+	char *name,*topic,*id;
+	name=strdup(chan->name);
+	topic=strdup(chan->topic);
+	id=strdup(chan->id);
+	if(0==name || 0==topic || 0==id){
+		goto ERROR_ADD_CHAN;
+	}
+	count=clist->count;
+	index=count;
+	count++;
+	size=sizeof(CHANNEL)*count;
+	ptr=realloc(clist->chan,size);
+	if(ptr){
+		CHANNEL *tmp;
+		tmp=&ptr[index];
+		memset(tmp,0,sizeof(CHANNEL));
+		memcpy(&tmp->msgs,&chan->msgs,sizeof(tmp->msgs));
+		tmp->id=id;
+		tmp->name=name;
+		tmp->topic=topic;
+		clist->chan=ptr;
+		clist->count=count;
+		result=TRUE;
+	}
+ERROR_ADD_CHAN:
+	if(!result){
+		free(name);free(topic);free(id);
+	}
+	return result;
+}
+static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
+{
+	int result=FALSE;
+	int index,count;
+	MESSAGE *ptr;
+	char *author,*auth_id,*id,*content,*timestamp;
+	int size;
+	author=strdup(msg->author);
+	auth_id=strdup(msg->auth_id);
+	id=strdup(msg->id);
+	content=strdup(msg->msg);
+	timestamp=strdup(msg->timestamp);
+	if(0==author || 0==auth_id || 0==id || 0==content || 0==timestamp){
+		goto ERROR_ADD_MSG;
+	}
+	count=mlist->count;
+	index=count;
+	count++;
+	size=sizeof(MESSAGE)*count;
+	ptr=realloc(mlist->m,size);
+	if(ptr){
+		MESSAGE *tmp;
+		tmp=&ptr[index];
+		memset(tmp,0,sizeof(MESSAGE));
+		tmp->author=author;
+		tmp->auth_id=auth_id;
+		tmp->id=id;
+		tmp->msg=content;
+		tmp->timestamp=timestamp;
+		mlist->m=ptr;
+		mlist->count=count;
+		result=TRUE;
+	}
+ERROR_ADD_MSG:
+	if(!result){
+		free(author);
+		free(auth_id);
+		free(id);
+		free(content);
+		free(timestamp);
+	}
+	return result;
+}
+
+static int remove_all_msg(MESSAGE_LIST *mlist)
+{
+	int i,count;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m;
+		m=&mlist->m[i];
+		free(m->author);
+		free(m->auth_id);
+		free(m->id);
+		free(m->msg);
+		free(m->timestamp);
+	}
+	free(mlist->m);
+	mlist->m=0;
+	mlist->count=0;
+	return TRUE;
+}
+static int remove_all_channels(CHANNEL_LIST *clist)
+{
+	int i,count;
+	count=clist->count;
+	for(i=0;i<count;i++){
+		CHANNEL *tmp;
+		tmp=&clist->chan[i];
+		free(tmp->id);
+		free(tmp->name);
+		free(tmp->topic);
+		remove_all_msg(&tmp->msgs);
+	}
+	if(count>0){
+		free(clist->chan);
+		clist->chan=0;
+		clist->count=0;
+	}
+	return TRUE;
+}
+static int remove_all_guilds(GUILD_LIST *glist)
+{
+	int i,count;
+	count=glist->count;
+	for(i=0;i<count;i++){
+		GUILD *tmp;
+		tmp=&glist->guild[i];
+		remove_all_channels(&tmp->channels);
+		free(tmp->id);
+		free(tmp->name);
+	}
+	free(glist->guild);
+	glist->guild=0;
+	glist->count=0;
+	return TRUE;
+}
 
 int is_chunked(const char *str)
 {
@@ -25,6 +226,7 @@ int is_chunked(const char *str)
 	return FALSE;
 }
 
+//does not allocate new string
 static int get_content(char *data,int data_len,char **out,int *out_len)
 {
 	int result=FALSE;
@@ -136,8 +338,6 @@ int is_resp_complete(char *data,int data_len)
 		{"Content-Length",&content_len,0},
 		{"Transfer-Encoding",&chunked,&is_chunked},
 	};
-	printf("is_resp_complete:\n%.*s\n",data_len,data);
-	printf("---\n");
 	data_end=data+data_len;
 	lines=get_line_count(data,data_len);
 	for(i=0;i<lines;i++){
@@ -242,7 +442,7 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 				}
 			}
 			n=ssl_read(ssl,(BYTE*)tmp+offset,avail);
-			if(n>0){
+			if(n>=0){
 				int res;
 				char *data;
 				int data_len;
@@ -259,11 +459,13 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 					}
 					break;
 				}
+				if(0==n)
+					Sleep(10);
 			}else{
-				Sleep(10);
+				break;
 			}
 			delta=GetTickCount()-tick;
-			if(delta>5000000){
+			if(delta>(DWORD)g_timeout){
 				break;
 			}
 		}
@@ -272,6 +474,47 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 	return result;
 }
 
+static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_content_len)
+{
+	int result=FALSE;
+	ssl_context *ssl;
+	int msg_len;
+	char *resp=0;
+	int resp_len=0;
+	int res;
+	ssl=&c->ssl;
+	msg_len=(int)strlen(req);
+	ssl_write(ssl,(BYTE*)req,msg_len);
+	printf("REQ:%s\n---\n",req);
+	res=get_response(c,&resp,&resp_len);
+	if(res){
+		printf("RESP:\n%.*s\n",resp_len,resp);
+		res=get_resp_code(resp,resp_len);
+		if(200==res){
+			char *content=0;
+			int content_len=0;
+			res=get_content(resp,resp_len,&content,&content_len);
+			if(res){
+				char *tmp;
+				int tmp_size=content_len+1;
+				tmp=malloc(tmp_size);
+				if(tmp){
+					memcpy(tmp,content,content_len);
+					tmp[tmp_size-1]=0;
+					*resp_content=tmp;
+					*resp_content_len=content_len;
+					result=TRUE;
+				}
+			}
+		}
+	}else{
+		printf("failed to get response\n");
+	}
+	if(resp){
+		free(resp);
+	}
+	return result;
+}
 
 int connect_disc(CONNECTION *c)
 {
@@ -292,7 +535,6 @@ int connect_disc(CONNECTION *c)
 		int json_len=0;
 		const char *user;
 		const char *pw;
-		int msg_len;
 		user=get_user_name();
 		pw=get_password();
 		/*
@@ -330,43 +572,22 @@ int connect_disc(CONNECTION *c)
 			int resp_len=0;
 			append_printf(&data,&data_len,"Content-Length: %u\r\n\r\n",strlen(json));
 			append_printf(&data,&data_len,"%s",json);
-			//printf("%s\n---\n",data);
-			msg_len=(int)strlen(data);
-			ssl_write(ssl,(BYTE*)data,msg_len);
-			res=get_response(c,&resp,&resp_len);
+			char *content=0;
+			int content_len=0;
+			res=do_http_req(c,data,&content,&content_len);
 			if(res){
-				res=get_resp_code(resp,resp_len);
-				if(200==res){
-					char *content=0;
-					int content_len=0;
-					printf("RESP:\n%.*s\n",resp_len,resp);
-					res=get_content(resp,resp_len,&content,&content_len);
-					if(res){
-						char *token=0;
-						content[content_len-1]=0;
-						res=extract_token(content,&token);
-						if(res){
-							strncpy(g_token,token,sizeof(g_token));
-							result=TRUE;
-						}
-					}
-				}else{
-					char *content=0;
-					int content_len=0;
-					printf("invalid resp code %i\n",res);
-					res=get_content(resp,resp_len,&content,&content_len);
-					if(res){
-						printf("%.*s\n",content_len,content);
-					}else{
-						printf("%.*s\n",resp_len,resp);
-					}
+				char *token=0;
+				content[content_len-1]=0;
+				res=extract_token(content,&token);
+				if(res){
+					strncpy(g_token,token,sizeof(g_token));
+					result=TRUE;
 				}
-			}else{
-				printf("failed to get response\n");
+				if(token)
+					free(token);
 			}
-			if(resp){
-				free(resp);
-			}
+			if(content)
+				free(content);
 		}
 		if(data)
 			free(data);
@@ -393,65 +614,177 @@ int get_gateway(CONNECTION *c)
 	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
 	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
 	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
-	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
 	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
 	if(data){
-		ssl_context *ssl;
-		int msg_len;
-		char *resp=0;
-		int resp_len=0;
 		int res;
-		printf("%s\n",data);
-		printf("---\n");
-		ssl=&c->ssl;
-		msg_len=strlen(data);
-		ssl_write(ssl,(BYTE*)data,msg_len);
-		res=get_response(c,&resp,&resp_len);
+		char *content=0;
+		int content_len=0;
+		res=do_http_req(c,data,&content,&content_len);
 		if(res){
-			char *content;
-			int content_len=0;
-			printf("gateway resp:\n%.*s\n",resp_len,resp);
-			res=get_content(resp,resp_len,&content,&content_len);
-			if(res){
-				const char *val=0;
-				int val_length=0;
-				//{"url": "wss://gateway.discord.gg"}
-				res=get_json_value_str(content,content_len,"url",&val,&val_length);
-				if(res){
+			JSON_Value *root;
+			//{"url": "wss://gateway.discord.gg"}
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONObject){
+				JSON_Object *obj;
+				JSON_Value *val;
+				const char *url;
+				obj=json_value_get_object(root);
+				val=json_object_get_value(obj,"url");
+				url=json_value_get_string(val);
+				if(url){
 					int dst_len=sizeof(g_gateway);
 					const char *prefix="wss://";
-					int plen=strlen(prefix);
-					res=strncmp(val,prefix,plen);
-					if(0==res){
-						val_length-=plen;
-						val+=plen;
-						if(val_length<0)
-							val_length=0;
+					if(startswithi(url,prefix)){
+						url+=strlen(prefix);
 					}
-					if(val_length>dst_len)
-						val_length=dst_len;
-					strncpy(g_gateway,val,val_length);
+					strncpy(g_gateway,url,sizeof(g_gateway));
 					g_gateway[sizeof(g_gateway)-1]=0;
 					result=TRUE;
 				}
-				
-				printf("%s\n",content);
+			}else{
+				printf("Error paring json to get gateway\n");
 			}
-		}else{
-			printf("failed to get response\n");
+			json_value_free(root);
 		}
+		if(content)
+			free(content);
 		free(data);
 
 	}
 	return result;
 }
 
-int do_at_me(CONNECTION *c)
+int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 {
 	int result=FALSE;
 	char *data=0;
 	int data_len=0;
-	append_printf(&data,&data_len,"GET /api/v6/users/@me HTTP/1.1\r\n");
+	remove_all_guilds(glist);
+	append_printf(&data,&data_len,"GET /api/v6/users/@me/guilds HTTP/1.1\r\n");
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
+	if(data){
+		char *content=0;
+		int content_len=0;
+		int res;
+		res=do_http_req(c,data,&content,&content_len);
+		if(res){
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONArray){
+				JSON_Array *guilds;
+				int i,count;
+				result=TRUE;
+				guilds=json_value_get_array(root);
+				count=json_array_get_count(guilds);
+				for(i=0;i<count;i++){
+					char *id,*name;
+					JSON_Object *guild=json_array_get_object(guilds,i);
+					id=strdup(json_object_get_string(guild,"id"));
+					name=strdup(json_object_get_string(guild,"name"));
+					if(id && name){
+						GUILD g={0};
+						g.id=id;
+						g.name=name;
+						if(!add_guild(glist,&g)){
+							result=FALSE;
+						}
+					}else{
+						result=FALSE;
+					}
+					free(id);
+					free(name);
+				}
+			}
+			json_value_free(root);
+		}
+		if(content)
+			free(content);
+		free(data);
+	}
+	return result;
+
+}
+
+static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,int count,const char *before_id)
+{
+	int result=FALSE;
+	char *data=0;
+	int data_len=0;
+	append_printf(&data,&data_len,"GET /api/v6/channels/%s/messages",chan_id);
+	append_printf(&data,&data_len,"?limit=%u",count);
+	if(before_id && before_id[0]!=0){
+		append_printf(&data,&data_len,"&before=",before_id);
+	}
+	append_printf(&data,&data_len," HTTP/1.1\r\n");
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
+	if(data){
+		char *content=0;
+		int content_len=0;
+		int res;
+		res=do_http_req(c,data,&content,&content_len);
+		if(res){
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONArray){
+				JSON_Array *msgs;
+				int i,count;
+				msgs=json_value_get_array(root);
+				count=json_array_get_count(msgs);
+				for(i=0;i<count;i++){
+					JSON_Object *msg;
+					const char *id;
+					const char *content;
+					const char *timestamp;
+					const char *auth;
+					const char *auth_id;
+					msg=json_array_get_object(msgs,i);
+					id=json_object_get_string(msg,"id");
+					content=json_object_get_string(msg,"content");
+					timestamp=json_object_get_string(msg,"timestamp");
+					auth=json_object_dotget_string(msg,"author.username");
+					auth_id=json_object_dotget_string(msg,"author.id");
+					if(id && content && timestamp){
+						MESSAGE msg={0};
+						if(0==auth)
+							auth="unknown";
+						if(0==auth_id)
+							auth_id="unknown";
+						msg.author=(char*)auth;
+						msg.auth_id=(char*)auth_id;
+						msg.id=(char*)id;
+						msg.msg=(char*)content;
+						msg.timestamp=(char*)timestamp;
+						if(!add_message(mlist,&msg)){
+							printf("Failed to add msg %s\n",id);
+						}
+					}
+				}
+			}
+			json_value_free(root);
+			result=TRUE;
+		}
+		if(content)
+			free(content);
+		free(data);
+
+	}
+	return result;
+}
+
+static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIST *clist)
+{
+	int result=FALSE;
+	char *data=0;
+	int data_len=0;
+	append_printf(&data,&data_len,"GET /api/v6/guilds/%s/channels HTTP/1.1\r\n",guild_id);
 	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
 	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
 	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
@@ -463,7 +796,7 @@ int do_at_me(CONNECTION *c)
 		char *resp=0;
 		int resp_len=0;
 		int res;
-		printf("%s\n",data);
+		printf("REQ:%s\n",data);
 		printf("---\n");
 		ssl=&c->ssl;
 		msg_len=strlen(data);
@@ -472,10 +805,41 @@ int do_at_me(CONNECTION *c)
 		if(res){
 			char *content;
 			int content_len=0;
-			printf("AT ME RESP:\n%.*s\n",resp_len,resp);
+			printf("RESP:\n%.*s\n",resp_len,resp);
 			res=get_content(resp,resp_len,&content,&content_len);
 			if(res){
-				printf("%.*s\n",content_len,content);
+				JSON_Value *root;
+				root=json_parse_string(content);
+				if(json_value_get_type(root)==JSONArray){
+					JSON_Array *chans;
+					int i,count;
+					chans=json_value_get_array(root);
+					count=json_array_get_count(chans);
+					for(i=0;i<count;i++){
+						JSON_Object *chan;
+						double x;
+						chan=json_array_get_object(chans,i);
+						x=json_object_get_number(chan,"type");
+						if(0==x){ //text channels only
+							char *id,*name,*topic;
+							id=strdup(json_object_get_string(chan,"id"));
+							name=strdup(json_object_get_string(chan,"name"));
+							topic=strdup(json_object_get_string(chan,"topic"));
+							if(id && name){
+								CHANNEL chan={0};
+								chan.id=id;
+								chan.name=name;
+								if(0==topic)
+									chan.topic="no topic set";
+								else
+									chan.topic=topic;
+								add_channel(clist,&chan);
+							}
+							free(name);free(topic);free(id);
+						}
+					}
+				}
+				json_value_free(root);
 				result=TRUE;
 			}else{
 				printf("failed to get content:\nresp=%.*s\n",resp_len,resp);
@@ -487,51 +851,54 @@ int do_at_me(CONNECTION *c)
 
 	}
 	return result;
-
+}
+int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
+{
+	int result=TRUE;
+	int i,count;
+	count=glist->count;
+	for(i=0;i<count;i++){
+		int res;
+		GUILD *g;
+		g=&glist->guild[i];
+		remove_all_channels(&g->channels);
+		res=get_channels_for_guild(c,g->id,&g->channels);
+		if(!res){
+			result=FALSE;
+		}
+	}
+	return result;
 }
 
-int do_at_me_settings(CONNECTION *c)
+static int dump_message_list(MESSAGE_LIST *mlist,const char *prefix)
 {
-	int result=FALSE;
-	char *data=0;
-	int data_len=0;
-	append_printf(&data,&data_len,"GET /api/v6/users/@me/settings HTTP/1.1\r\n");
-	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
-	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
-	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
-	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
-	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
-	if(data){
-		ssl_context *ssl;
-		int msg_len;
-		char *resp=0;
-		int resp_len=0;
-		int res;
-		printf("%s\n",data);
-		printf("---\n");
-		ssl=&c->ssl;
-		msg_len=strlen(data);
-		ssl_write(ssl,(BYTE*)data,msg_len);
-		res=get_response(c,&resp,&resp_len);
-		if(res){
-			char *content;
-			int content_len=0;
-			printf("settings RESP:\n%.*s\n",resp_len,resp);
-			res=get_content(resp,resp_len,&content,&content_len);
-			if(res){
-				printf("%.*s\n",content_len,content);
-				result=TRUE;
-			}else{
-				printf("failed to get content:\nresp=%.*s\n",resp_len,resp);
-			}
-		}else{
-			printf("failed to get response\n");
-		}
-		free(data);
-
+	int i,count;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *msg;
+		msg=&mlist->m[i];
+		printf("%s<%s> %s %s\n",prefix,msg->author,msg->timestamp,msg->msg);
 	}
-	return result;
+	return 0;
+}
+static int dump_guild_stuff(GUILD_LIST *glist)
+{
+	int i,count;
+	count=glist->count;
+	for(i=0;i<count;i++){
+		int j,chan_count;
+		GUILD *g=&glist->guild[i];
+		printf("GUILD %s %s\n",g->name,g->id);
+		chan_count=g->channels.count;
+		for(j=0;j<chan_count;j++){
+			CHANNEL *chan;
+			chan=&g->channels.chan[j];
+			printf(" %s %s %s\n",chan->name,chan->topic,chan->id);
+			dump_message_list(&chan->msgs,"  :");
 
+		}
+	}
+	return 0;
 }
 
 
@@ -541,8 +908,8 @@ void discord_thread(void *args)
 	CONNECTION con={0};
 	enum{
 		DISC_CONNECT=0,
-		DISC_AT_ME,
-		DISC_AT_ME_SETTINGS,
+		DISC_GET_GUILDS,
+		DISC_GET_CHANNELS,
 		DISC_GET_GATEWAY,
 		DISC_WAIT_CMD,
 	};
@@ -558,22 +925,20 @@ void discord_thread(void *args)
 				res=connect_disc(&con);
 				if(res){
 					printf("found token\n");
-					state=DISC_AT_ME;
+					state=DISC_GET_GUILDS;
 				}else{
 					printf("failed login\n");
 					Sleep(5000);
 				}
 			}
 			break;
-		case DISC_AT_ME:
-			if(do_at_me(&con)){
-				state=DISC_AT_ME_SETTINGS;
-			}else{
-				state=DISC_GET_GATEWAY;
-			}
+		case DISC_GET_GUILDS:
+			get_guilds(&con,&g_guild_list);
+			state=DISC_GET_CHANNELS;
 			break;
-		case DISC_AT_ME_SETTINGS:
-			do_at_me_settings(&con);
+		case DISC_GET_CHANNELS:
+			get_all_channels(&con,&g_guild_list);
+			dump_guild_stuff(&g_guild_list);
 			state=DISC_GET_GATEWAY;
 			break;
 		case DISC_GET_GATEWAY:
@@ -610,8 +975,8 @@ int do_wait()
 int main(int argc,char **argv)
 {
 	//_beginthread(&gateway_thread,0,NULL);
-	//_beginthread(&discord_thread,0,NULL);
-	_beginthread(&irc_thread,0,NULL);
+	_beginthread(&discord_thread,0,NULL);
+	//_beginthread(&irc_thread,0,NULL);
 	do_wait();
 	return 0;
 }
