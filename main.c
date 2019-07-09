@@ -1,4 +1,5 @@
 #define CINTERFACE
+#include <winsock2.h>
 #include <Windows.h>
 #include <process.h>
 #include <stdio.h>
@@ -901,6 +902,72 @@ static int dump_guild_stuff(GUILD_LIST *glist)
 	return 0;
 }
 
+static CRITICAL_SECTION g_mutex={0};
+static int mutex_ready=FALSE;
+typedef struct{
+	int cmd;
+	char *data;
+	void *next;
+	void *prev;
+}DISCORD_CMD;
+enum{
+	CMD_JOIN_CHAN=1,
+	CMD_GET_MSGS,
+	CMD_POST_MSG,
+};
+DISCORD_CMD *g_cmd_list=0;
+
+static int init_mutex()
+{
+	if(!mutex_ready){
+		mutex_ready=TRUE;
+		InitializeCriticalSection(&g_mutex);
+	}
+	return TRUE;
+}
+static int enter_mutex()
+{
+	init_mutex();
+	EnterCriticalSection(&g_mutex);
+}
+static int leave_mutex()
+{
+	LeaveCriticalSection(&g_mutex);
+}
+static int add_discord_cmd(DISCORD_CMD *cmd)
+{
+	int result=FALSE;
+	DISCORD_CMD *tmp;
+	tmp=calloc(1,sizeof(DISCORD_CMD));
+	if(tmp){
+		char *str;
+		tmp->cmd=cmd->cmd;
+		str=strdup(cmd->data);
+		if(str){
+			tmp->data=str;
+			result=TRUE;
+		}
+		if(result){
+			enter_mutex();
+			if(0==g_cmd_list){
+				g_cmd_list=tmp;
+			}else{
+				DISCORD_CMD *node=g_cmd_list;
+				while(node->next){
+					node=node->next;
+				}
+			}
+			leave_mutex();
+		}
+
+	}
+}
+static int process_requests(CONNECTION *c)
+{
+	int result=FALSE;
+	//WSAWaitForMultipleEvents();
+	return result;
+}
 
 
 void discord_thread(void *args)
@@ -952,7 +1019,13 @@ void discord_thread(void *args)
 			}
 			break;
 		case DISC_WAIT_CMD:
-			Sleep(1000);
+			{
+				int res;
+				res=process_requests(&con);
+				if(!res){
+					state=DISC_CONNECT;
+				}
+			}
 			break;
 		default:
 			Sleep(1000);
