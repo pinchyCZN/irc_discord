@@ -904,6 +904,7 @@ static int dump_guild_stuff(GUILD_LIST *glist)
 
 static CRITICAL_SECTION g_mutex={0};
 static int mutex_ready=FALSE;
+static HANDLE g_event=0;
 typedef struct{
 	int cmd;
 	char *data;
@@ -917,24 +918,22 @@ enum{
 };
 DISCORD_CMD *g_cmd_list=0;
 
-static int init_mutex()
+static void init_mutex()
 {
 	if(!mutex_ready){
 		mutex_ready=TRUE;
 		InitializeCriticalSection(&g_mutex);
 	}
-	return TRUE;
 }
-static int enter_mutex()
+static void enter_mutex()
 {
-	init_mutex();
 	EnterCriticalSection(&g_mutex);
 }
-static int leave_mutex()
+static void leave_mutex()
 {
 	LeaveCriticalSection(&g_mutex);
 }
-static int add_discord_cmd(DISCORD_CMD *cmd)
+int add_discord_cmd(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
 	DISCORD_CMD *tmp;
@@ -958,14 +957,43 @@ static int add_discord_cmd(DISCORD_CMD *cmd)
 				}
 			}
 			leave_mutex();
+			SetEvent(g_event);
 		}
-
 	}
+	return result;
 }
+
+int pop_discord_cmd(DISCORD_CMD *cmd)
+{
+	int result=FALSE;
+	enter_mutex();
+	if(0==g_cmd_list){
+		return result;
+	}
+	cmd->cmd=g_cmd_list->cmd;
+	cmd->data=g_cmd_list->data;
+	cmd->next=0;
+	cmd->prev=0;
+	g_cmd_list=g_cmd_list->next;
+	g_cmd_list->prev=0;
+	result=TRUE;
+	leave_mutex();
+	return result;
+}
+
 static int process_requests(CONNECTION *c)
 {
 	int result=FALSE;
-	//WSAWaitForMultipleEvents();
+	HANDLE hlist[2]={0};
+	int hcount=0;
+	DWORD res;
+	hlist[hcount++]=(HANDLE)c->sock;
+	hlist[hcount++]=g_event;
+	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,1000,FALSE);
+	if(WAIT_OBJECT_0==res){
+	}
+	Sleep(100);
+	result=TRUE;
 	return result;
 }
 
@@ -1023,6 +1051,7 @@ void discord_thread(void *args)
 				int res;
 				res=process_requests(&con);
 				if(!res){
+					Sleep(5000);
 					state=DISC_CONNECT;
 				}
 			}
@@ -1047,9 +1076,12 @@ int do_wait()
 
 int main(int argc,char **argv)
 {
-	//_beginthread(&gateway_thread,0,NULL);
+	init_mutex();
+	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
+
+	_beginthread(&gateway_thread,0,NULL);
 	_beginthread(&discord_thread,0,NULL);
-	//_beginthread(&irc_thread,0,NULL);
+	_beginthread(&irc_thread,0,NULL);
 	do_wait();
 	return 0;
 }

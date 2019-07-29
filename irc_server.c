@@ -72,6 +72,32 @@ int send_motd(SOCKET s,char *nick)
 	return result;
 }
 
+static int handle_join(const char *cmd)
+{
+	int result=FALSE;
+	char *tmp,*ptr;
+	int len;
+	ptr=strchr(cmd,'#');
+	if(0==ptr){
+		return result;
+	}
+	tmp=strdup(ptr+1);
+	if(0==tmp){
+		return result;
+	}
+	trim_right(tmp);
+	len=strlen(tmp);
+	if(len){
+		char a=tmp[len-1];
+		if(':'==a){
+			tmp[len-1]=0;
+			trim_right(tmp);
+		}
+
+	}
+	
+	free(tmp);
+}
 
 int handle_connection(SOCKET s)
 {
@@ -104,6 +130,9 @@ int handle_connection(SOCKET s)
 			{
 				char cmd[40]={0};
 				sscanf(line,"%39s",cmd);
+				if(startswithi(cmd,"JOIN ")){
+					handle_join(cmd);
+				}
 				_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
 				net_send_str(s,line);
 			}

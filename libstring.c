@@ -163,6 +163,22 @@ int trim_trailing_crlf(char *str, int end_index)
 	}
 	return TRUE;
 }
+int trim_right(char *str)
+{
+	int i,len;
+	len=strlen(str);
+	for(i=len-1;i>=0;i--){
+		char a;
+		a=str[i];
+		if(isspace(a)){
+			str[i]=0;
+		}else{
+			break;
+		}
+	}
+	return TRUE;
+}
+
 int get_line_count(char *data,int data_len)
 {
 	int result=0;
