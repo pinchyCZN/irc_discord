@@ -3,6 +3,7 @@
 #include "polarssl/net.h"
 #include "config.h"
 #include "libstring.h"
+#include "discord.h"
 
 #pragma warning (disable:4996)
 /*
@@ -72,7 +73,7 @@ int send_motd(SOCKET s,char *nick)
 	return result;
 }
 
-static int handle_join(const char *cmd)
+static void handle_join(const char *cmd)
 {
 	int result=FALSE;
 	char *tmp,*ptr;
@@ -93,9 +94,11 @@ static int handle_join(const char *cmd)
 			tmp[len-1]=0;
 			trim_right(tmp);
 		}
-
 	}
-	
+	len=strlen(tmp);
+	if(len){
+		add_discord_cmd(CMD_JOIN_CHAN,tmp);
+	}
 	free(tmp);
 }
 
@@ -129,9 +132,10 @@ int handle_connection(SOCKET s)
 		case 1:
 			{
 				char cmd[40]={0};
-				sscanf(line,"%39s",cmd);
-				if(startswithi(cmd,"JOIN ")){
-					handle_join(cmd);
+				char chan[40]={0};
+				sscanf(line,"%39s%39s",cmd,chan);
+				if(startswithi(cmd,"JOIN")){
+					handle_join(chan);
 				}
 				_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
 				net_send_str(s,line);

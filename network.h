@@ -6,7 +6,9 @@
 #include "polarssl/entropy.h"
 #include "polarssl/ctr_drbg.h"
 #include "polarssl/error.h"
-
+#ifdef _WIN64
+#error Win64 not supported
+#endif
 typedef unsigned int SOCKET;
 
 typedef struct{

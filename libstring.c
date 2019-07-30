@@ -3,7 +3,7 @@
 
 #pragma warning(disable:4996)
 
-void dump_hex(BYTE *data,int len)
+void dump_hex(unsigned char *data,int len)
 {
 	int i;
 	int width=16;
@@ -342,3 +342,20 @@ int startswithi(const char *str,const char *substr)
 	}
 	return result;
 }
+
+int null_str(unsigned char **data,int data_len)
+{
+	int result=FALSE;
+	BYTE *tmp;
+	int tmp_len;
+	tmp_len=data_len+1;
+	tmp=*data;
+	tmp=(BYTE*)realloc(tmp,tmp_len);
+	if(tmp){
+		*data=tmp;
+		tmp[tmp_len-1]=0;
+		result=TRUE;
+	}
+	return result;
+}
+

@@ -12,6 +12,8 @@ int extract_token(const char *data,char **token);
 
 int trim_trailing_crlf(char *str, int end_index);
 
+int trim_right(char *str);
+
 int get_line_count(char *data,int data_len);
 
 int get_line_offset(char *data,int data_len,int line_num,char **out);

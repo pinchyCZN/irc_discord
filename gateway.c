@@ -6,6 +6,7 @@
 #include "parson.h"
 
 static HANDLE g_gwevent=0;
+static DWORD g_hbeat_interval=30000;
 
 enum{
 	GW_LOGIN=0,
@@ -356,7 +357,6 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		*seq_num=(int)x;
 	}
 	printf("process payload:\n%.*s\n",data_len,data);
-	json_value_free(root);
 
 	switch(opcode){
 	case 0: //process incoming command
@@ -367,6 +367,10 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		break;
 	case 10: //hello
 		send_identify(ssl);
+		g_hbeat_interval=(DWORD)json_object_dotget_number(obj,"d.heartbeat_interval");
+		if(g_hbeat_interval<10000){
+			g_hbeat_interval=10000;
+		}
 		break;
 	case 11: //hrtbt ack
 		printf("recv heartbeat\n");
@@ -376,6 +380,7 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		break;
 	}
 
+	json_value_free(root);
 	result=TRUE;
 	return result;
 }
@@ -403,7 +408,7 @@ int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,
 		if(!timeout){
 			(*error_count)++;
 		}else{
-			printf("timeout\n");
+			//printf("timeout\n");
 		}
 		return result;
 	}
@@ -482,11 +487,10 @@ void gateway_thread(void *args)
 						con.ssl.read_timeout=2;
 						while(1){
 							process_ws(&con,&payload,&payload_size,&exit_ws,&state,&error_count,&seq_num);
-							printf("done process ws\n");
 							if(!exit_ws){
 								DWORD delta;
 								delta=GetTickCount()-tick;
-								if(delta>4000){
+								if(delta>=g_hbeat_interval){
 									res=send_heartbeat(&con.ssl,seq_num);
 									tick=GetTickCount();
 									if(!res)

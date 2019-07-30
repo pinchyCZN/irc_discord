@@ -20,7 +20,7 @@ int close_connection(CONNECTION *c)
 	if(ssl){
 		ssl_close_notify(ssl);
 		if(c->sock){
-			net_close(c->sock);
+			net_close((int)c->sock);
 			c->sock=0;
 		}
 		ssl_free(ssl);
@@ -65,23 +65,6 @@ int ssl_connect(ssl_context *ssl,const int options,const char *host,const int po
 	result=TRUE;
 	return result;
 }
-
-int null_str(BYTE **data,int data_len)
-{
-	int result=FALSE;
-	BYTE *tmp;
-	int tmp_len;
-	tmp_len=data_len+1;
-	tmp=*data;
-	tmp=(BYTE*)realloc(tmp,tmp_len);
-	if(tmp){
-		*data=tmp;
-		tmp[tmp_len-1]=0;
-		result=TRUE;
-	}
-	return result;
-}
-
 
 int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 {

@@ -13,6 +13,7 @@
 #include "config.h"
 #include "gateway.h"
 #include "irc_server.h"
+#include "discord.h"
 
 #pragma warning(disable:4996)
 
@@ -911,11 +912,6 @@ typedef struct{
 	void *next;
 	void *prev;
 }DISCORD_CMD;
-enum{
-	CMD_JOIN_CHAN=1,
-	CMD_GET_MSGS,
-	CMD_POST_MSG,
-};
 DISCORD_CMD *g_cmd_list=0;
 
 static void init_mutex()
@@ -933,15 +929,15 @@ static void leave_mutex()
 {
 	LeaveCriticalSection(&g_mutex);
 }
-int add_discord_cmd(DISCORD_CMD *cmd)
+int add_discord_cmd(int cmd,char *cmd_data)
 {
 	int result=FALSE;
 	DISCORD_CMD *tmp;
 	tmp=calloc(1,sizeof(DISCORD_CMD));
 	if(tmp){
 		char *str;
-		tmp->cmd=cmd->cmd;
-		str=strdup(cmd->data);
+		tmp->cmd=cmd;
+		str=strdup(cmd_data);
 		if(str){
 			tmp->data=str;
 			result=TRUE;
@@ -955,6 +951,8 @@ int add_discord_cmd(DISCORD_CMD *cmd)
 				while(node->next){
 					node=node->next;
 				}
+				node->next=tmp;
+				tmp->prev=node;
 			}
 			leave_mutex();
 			SetEvent(g_event);
@@ -975,9 +973,34 @@ int pop_discord_cmd(DISCORD_CMD *cmd)
 	cmd->next=0;
 	cmd->prev=0;
 	g_cmd_list=g_cmd_list->next;
-	g_cmd_list->prev=0;
+	if(g_cmd_list)
+		g_cmd_list->prev=0;
 	result=TRUE;
 	leave_mutex();
+	return result;
+}
+
+static void free_discord_cmd(DISCORD_CMD *cmd)
+{
+	if(0==cmd)
+		return;
+	if(cmd->data){
+		free(cmd->data);
+		cmd->data=0;
+		cmd->cmd=0;
+		cmd->next=0;
+		cmd->prev=0;
+	}
+}
+
+static int process_join_chan(DISCORD_CMD *cmd)
+{
+	int result=FALSE;
+	int i,count;
+	count=0;
+	for(i=0;i<count;i++){
+		
+	}
 	return result;
 }
 
@@ -990,9 +1013,37 @@ static int process_requests(CONNECTION *c)
 	hlist[hcount++]=(HANDLE)c->sock;
 	hlist[hcount++]=g_event;
 	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,1000,FALSE);
-	if(WAIT_OBJECT_0==res){
+	switch(res){
+	case WAIT_OBJECT_0: //socket
+		{
+			printf("socket event\n");
+
+		}
+		break;
+	case WAIT_OBJECT_0+1: //req
+		{
+			DISCORD_CMD cmd={0};
+			int res;
+			printf("external request event\n");
+			res=pop_discord_cmd(&cmd);
+			if(res){
+				switch(cmd.cmd){
+				case CMD_JOIN_CHAN:
+					process_join_chan(&cmd);
+					break;
+				case CMD_GET_MSGS:
+					break;
+				case CMD_POST_MSG:
+					break;
+				}
+				free_discord_cmd(&cmd);
+			}
+		}
+		break;
+	default:
+		Sleep(100);
+		break;
 	}
-	Sleep(100);
 	result=TRUE;
 	return result;
 }
