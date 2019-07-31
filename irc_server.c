@@ -1,3 +1,4 @@
+#include <winsock2.h>
 #include <Windows.h>
 #include <stdio.h>
 #include "polarssl/net.h"
@@ -6,6 +7,13 @@
 #include "discord.h"
 
 #pragma warning (disable:4996)
+
+static HANDLE g_irc_event=0;
+static CRITICAL_SECTION irc_mutex={0};
+static int irc_mutex_init=FALSE;
+static char **irc_msg=0;
+static int irc_msg_count=0;
+
 /*
 ":my.server.name 001 test123 :Welcome to the Internet Relay Network test123"
 "PING :675028717"
@@ -75,16 +83,15 @@ int send_motd(SOCKET s,char *nick)
 
 static void handle_join(const char *cmd)
 {
-	int result=FALSE;
 	char *tmp,*ptr;
 	int len;
 	ptr=strchr(cmd,'#');
 	if(0==ptr){
-		return result;
+		return;
 	}
 	tmp=strdup(ptr+1);
 	if(0==tmp){
-		return result;
+		return;
 	}
 	trim_right(tmp);
 	len=strlen(tmp);
@@ -102,6 +109,76 @@ static void handle_join(const char *cmd)
 	free(tmp);
 }
 
+int push_irc_msg(const char *str)
+{
+	int result=FALSE;
+	int list_size;
+	int count;
+	int index;
+	char **tmp_list;
+	EnterCriticalSection(&irc_mutex);
+	count=irc_msg_count;
+	index=irc_msg_count;
+	count++;
+	list_size=sizeof(char*)*count;
+	tmp_list=realloc(irc_msg,list_size);
+	if(tmp_list){
+		char *tmp;
+		tmp=strdup(str);
+		if(tmp){
+			result=TRUE;
+			irc_msg=tmp_list;
+			irc_msg[index]=tmp;
+			irc_msg_count=count;
+		}
+	}
+	LeaveCriticalSection(&irc_mutex);
+	SetEvent(g_irc_event);
+	return result;
+}
+
+static int pop_irc_msg(char **msg)
+{
+	int result=FALSE;
+	EnterCriticalSection(&irc_mutex);
+	if(irc_msg_count){
+		char **tmp_list;
+		int list_size,count;
+		int index;
+		index=0;
+		count=irc_msg_count-1;
+		list_size=sizeof(char*)*count;
+		result=TRUE;
+		*msg=irc_msg[index];
+		memcpy(irc_msg,irc_msg+1,list_size);
+		tmp_list=realloc(irc_msg,list_size);
+		if(tmp_list || (0==list_size && 0==tmp_list)){
+			irc_msg=tmp_list;
+			irc_msg_count=count;
+		}
+	}
+	LeaveCriticalSection(&irc_mutex);
+	return result;
+}
+
+static int data_avail(SOCKET s,int timeout,int *has_error)
+{
+	int result=FALSE;
+	int res;
+	fd_set readfd={0};
+	struct timeval time={0};
+	time.tv_usec=timeout*1000;
+	readfd.fd_count=1;
+	readfd.fd_array[0]=s;
+	res=select(1,&readfd,NULL,NULL,&time);
+	if(1==res){
+		result=TRUE;
+	}else if(SOCKET_ERROR==res){
+		*has_error=TRUE;
+	}
+	return result;
+}
+
 int handle_connection(SOCKET s)
 {
 	static char line[2048];
@@ -110,40 +187,80 @@ int handle_connection(SOCKET s)
 	int state=0;
 	while(1){
 		int res;
-		memset(line,0,sizeof(line));
-		res=read_line(s,line,sizeof(line));
-		if(res<=0){
-			break;
-		}
-		printf("RECV:%s",line);
-		switch(state){
-		case 0:
-			if(startswithi(line,"USER ")){
-				sscanf(line,"%*s%79s",name);
-				send_motd(s,nick);
-			}else if(startswithi(line,"NICK ")){
-				sscanf(line,"%*s%79s",nick);
-			}
-			if(nick[0]!=0 && name[0]!=0){
-				printf("nick=%s name=%s\n",nick,name);
-				state=1;
-			}
-			break;
-		case 1:
-			{
-				char cmd[40]={0};
-				char chan[40]={0};
-				sscanf(line,"%39s%39s",cmd,chan);
-				if(startswithi(cmd,"JOIN")){
-					handle_join(chan);
+		int has_error;
+		res=WaitForSingleObject(g_irc_event,30);
+		if(WAIT_OBJECT_0==res){
+			int exit=FALSE;
+			while(1){
+				int res;
+				char *msg=0;
+				int msg_len;
+				res=pop_irc_msg(&msg);
+				if(!res){
+					break;
 				}
-				_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
-				net_send_str(s,line);
+				if(0==msg){
+					continue;
+				}
+				msg_len=strlen(msg);
+				if(msg_len){
+					if('\n'!=msg[msg_len-1]){
+						append_printf(&msg,&msg_len,"\r\n");
+					}
+				}
+				net_send_str(s,msg);
+				free(msg);
 			}
+		}
+		has_error=FALSE;
+		res=data_avail(s,30,&has_error);
+		if(has_error){
+			printf("IRC socket select error\n");
 			break;
 		}
-		if(state>=99){
-			break;
+		if(res){
+			memset(line,0,sizeof(line));
+			res=read_line(s,line,sizeof(line));
+			if(res<=0){
+				break;
+			}
+			printf("RECV:%s",line);
+			switch(state){
+			case 0:
+				if(startswithi(line,"USER ")){
+					sscanf(line,"%*s%79s",name);
+					send_motd(s,nick);
+				}else if(startswithi(line,"NICK ")){
+					sscanf(line,"%*s%79s",nick);
+				}
+				if(nick[0]!=0 && name[0]!=0){
+					printf("nick=%s name=%s\n",nick,name);
+					state=1;
+				}
+				break;
+			case 1:
+				{
+					char cmd[40]={0};
+					int cmd_valid=FALSE;
+					sscanf(line,"%39s",cmd);
+					if(startswithi(cmd,"JOIN")){
+						char *tmp;
+						tmp=strchr(line,'#');
+						if(tmp){
+							handle_join(tmp);
+							cmd_valid=TRUE;
+						}
+					}else if(startswithi(cmd,"LIST")){
+						add_discord_cmd(CMD_LIST_CHAN,"");
+					}
+					_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
+					net_send_str(s,line);
+				}
+				break;
+			}
+			if(state>=99){
+				break;
+			}
 		}
 	}
 	return 0;
@@ -155,6 +272,13 @@ void irc_thread(void *args)
 	const char *host="127.0.0.1";
 	int port;
 	int res;
+	if(0==g_irc_event){
+		g_irc_event=CreateEventA(NULL,FALSE,FALSE,"IRC_EVENT");
+	}
+	if(!irc_mutex_init){
+		irc_mutex_init=TRUE;
+		InitializeCriticalSection(&irc_mutex);
+	}
 	port=get_irc_port();
 	res=net_bind(&s,host,port);
 	if(0!=res){

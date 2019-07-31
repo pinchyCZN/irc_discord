@@ -993,13 +993,117 @@ static void free_discord_cmd(DISCORD_CMD *cmd)
 	}
 }
 
+static int copy_str(char *dst,int dst_size,const char *start,const char *end)
+{
+	int result=0;
+	SIZE_T len;
+	if(start>=end){
+		return result;
+	}
+	len=end-start;
+	if(dst_size>0){
+		if(len>(SIZE_T)dst_size){
+			len=dst_size;
+		}
+		strncpy(dst,start,len);
+		dst[dst_size-1]=0;
+	}
+	result=len;
+	return result;
+}
+static const char *last_nonspace(const char *str)
+{
+	const char *result=str;
+	int i,count;
+	count=strlen(str);
+	for(i=count-1;i>=0;i--){
+		char a;
+		a=str[i];
+		if(!isspace(a)){
+			result=str+i+1;
+			break;
+		}
+	}
+	return result;
+}
+static int extract_guild_chan(const char *str,char *guild,int guild_size,char *chan,int chan_size)
+{
+	int result=FALSE;
+	const char *tmp;
+	const char *res;
+	char delim;
+	tmp=str;
+	if('#'==tmp[0]){
+		tmp++;
+	}
+	res=0;
+	delim='.';
+	if('"'==tmp[0]){
+		delim='"';
+		tmp++;
+	}
+	res=strchr(tmp,delim);
+	if(res){
+		copy_str(guild,guild_size,tmp,res);
+		tmp=res;
+	}
+	if('"'==tmp[0]){
+		tmp++;
+	}
+	//should be pointing to '.'
+	if(res){
+		const char *end;
+		tmp++;
+		if('"'==tmp[0]){
+			tmp++;
+			end=strchr(tmp,'"');
+		}else{
+			end=last_nonspace(tmp);
+		}
+		copy_str(chan,chan_size,tmp,end);
+		result=TRUE;
+	}
+	return result;
+}
+
 static int process_join_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
+	char guild[80]={0};
+	char chan[80]={0};
+	char *str;
+	str=cmd->data;
+	extract_guild_chan(str,guild,sizeof(guild),chan,sizeof(chan));
+	printf("SRC=%s\n",str);
+	printf("guild=%s chan=%s\n",guild,chan);
+	return result;
+}
+
+/*
+321 CHannel Users Name
+322 #blah 5 chan topic
+323 END of list
+*/
+static int process_list_chan(DISCORD_CMD *cmd)
+{
+	int result=FALSE;
 	int i,count;
-	count=0;
+	count=g_guild_list.count;
 	for(i=0;i<count;i++){
-		
+		int j;
+		int chan_count;
+		GUILD *guild;
+		guild=&g_guild_list.guild[i];
+		chan_count=guild->channels.count;
+		for(j=0;j<chan_count;j++){
+			CHANNEL *chan;
+			char tmp[256]={0};
+			chan=&guild->channels.chan[j];
+			_snprintf(tmp,sizeof(tmp),"322 #\"%s\".\"%s\" %i %s",guild->name,chan->name,0,chan->topic);
+			tmp[sizeof(tmp)-1]=0;
+			push_irc_msg(tmp);
+		}
+
 	}
 	return result;
 }
@@ -1021,6 +1125,7 @@ static int process_requests(CONNECTION *c)
 		}
 		break;
 	case WAIT_OBJECT_0+1: //req
+		while(1)
 		{
 			DISCORD_CMD cmd={0};
 			int res;
@@ -1031,12 +1136,17 @@ static int process_requests(CONNECTION *c)
 				case CMD_JOIN_CHAN:
 					process_join_chan(&cmd);
 					break;
+				case CMD_LIST_CHAN:
+					process_list_chan(&cmd);
+					break;
 				case CMD_GET_MSGS:
 					break;
 				case CMD_POST_MSG:
 					break;
 				}
 				free_discord_cmd(&cmd);
+			}else{
+				break;
 			}
 		}
 		break;

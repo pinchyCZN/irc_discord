@@ -1,5 +1,6 @@
 enum{
 	CMD_JOIN_CHAN=1,
+	CMD_LIST_CHAN,
 	CMD_GET_MSGS,
 	CMD_POST_MSG,
 };
