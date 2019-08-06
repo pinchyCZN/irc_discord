@@ -1088,6 +1088,9 @@ static int process_list_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
 	int i,count;
+	char tmp[256]={0};
+	_snprintf(tmp,sizeof(tmp),"START_CHAN_LIST");
+	push_irc_msg(tmp);
 	count=g_guild_list.count;
 	for(i=0;i<count;i++){
 		int j;
@@ -1097,14 +1100,16 @@ static int process_list_chan(DISCORD_CMD *cmd)
 		chan_count=guild->channels.count;
 		for(j=0;j<chan_count;j++){
 			CHANNEL *chan;
-			char tmp[256]={0};
 			chan=&guild->channels.chan[j];
-			_snprintf(tmp,sizeof(tmp),"322 #\"%s\".\"%s\" %i %s",guild->name,chan->name,0,chan->topic);
+			memset(tmp,0,sizeof(tmp));
+			_snprintf(tmp,sizeof(tmp),"CHAN_LIST #\"%s\".\"%s\" %i %s",guild->name,chan->name,0,chan->topic);
 			tmp[sizeof(tmp)-1]=0;
 			push_irc_msg(tmp);
 		}
 
 	}
+	_snprintf(tmp,sizeof(tmp),"END_CHAN_LIST");
+	push_irc_msg(tmp);
 	return result;
 }
 

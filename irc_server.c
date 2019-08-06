@@ -27,6 +27,8 @@ JOIN #test123
 
 SEND: sadfadf
 RECV: :my.server.name 421 test123 sadfadf :Unknown command
+RECV: :chopchop1!~chopchop1@my.server.name JOIN :#test123
+RECV: :chopchop1!~chopchop1@my.server.name PRIVMSG #test123 :asdfsadf
 
 whois
 ":my.server.name 311 test123 test123 ~123 my.server.name * :qwe"
@@ -107,6 +109,44 @@ static void handle_join(const char *cmd)
 		add_discord_cmd(CMD_JOIN_CHAN,tmp);
 	}
 	free(tmp);
+}
+
+enum{
+	START_CHAN_LIST=321,
+	CHAN_LIST=322,
+	END_CHAN_LIST=323,
+	CHAN_MSG=100,
+	PRIV_MSG=110,
+};
+static int get_irc_msg_code(const char *str)
+{
+	int result=0;
+	typedef struct{
+		const char *str;
+		int code;
+	}CODE_MAP;
+	CODE_MAP code_map[]={
+		{"START_CHAN_LIST",START_CHAN_LIST},
+		{"CHAN_LIST",CHAN_LIST},
+		{"END_CHAN_LIST",END_CHAN_LIST},
+		{"CHAN_MSG",CHAN_MSG},
+		{"PRIV_MSG",PRIV_MSG},
+	};
+	int i,count;
+	count=_countof(code_map);
+	for(i=0;i<count;i++){
+		if(startswithi(str,code_map[i].str)){
+			result=code_map[i].code;
+			break;
+		}
+	}
+	return result;
+}
+
+static int handle_msg(SOCKET s,const char *str,const char *nick)
+{
+	if(startswithi(str,"START_CHAN_LIST")){
+	}
 }
 
 int push_irc_msg(const char *str)

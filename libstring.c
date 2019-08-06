@@ -359,3 +359,28 @@ int null_str(unsigned char **data,int data_len)
 	return result;
 }
 
+const char *seek_next_word(const char *str)
+{
+	const char *result=0;
+	int index=0;
+	int state=0;
+	while(1){
+		char a=str[index];
+		if(0==a){
+			break;
+		}
+		if(0==state){
+			if(isspace(a)){
+				state=1;
+			}
+		}else{
+			if(!isspace(a)){
+				result=str+index;
+				break;
+			}
+		}
+		index++;
+	}
+	return result;
+}
+

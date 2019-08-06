@@ -27,3 +27,5 @@ const char *strstri(const char *str,const char *substr);
 int startswithi(const char *str,const char *substr);
 
 int null_str(unsigned char **data,int data_len);
+
+const char *seek_next_word(const char *str);
