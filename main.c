@@ -487,10 +487,10 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 	ssl=&c->ssl;
 	msg_len=(int)strlen(req);
 	ssl_write(ssl,(BYTE*)req,msg_len);
-	printf("REQ:%s\n---\n",req);
+	//printf("REQ:%s\n---\n",req);
 	res=get_response(c,&resp,&resp_len);
 	if(res){
-		printf("RESP:\n%.*s\n",resp_len,resp);
+		//printf("RESP:\n%.*s\n",resp_len,resp);
 		res=get_resp_code(resp,resp_len);
 		if(200==res){
 			char *content=0;
@@ -764,6 +764,7 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
 						msg.timestamp=(char*)timestamp;
+						printf("msg:%s %s\n",auth,content);
 						if(!add_message(mlist,&msg)){
 							printf("Failed to add msg %s\n",id);
 						}
@@ -798,8 +799,8 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 		char *resp=0;
 		int resp_len=0;
 		int res;
-		printf("REQ:%s\n",data);
-		printf("---\n");
+		//printf("REQ:%s\n",data);
+		//printf("---\n");
 		ssl=&c->ssl;
 		msg_len=strlen(data);
 		ssl_write(ssl,(BYTE*)data,msg_len);
@@ -807,7 +808,7 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 		if(res){
 			char *content;
 			int content_len=0;
-			printf("RESP:\n%.*s\n",resp_len,resp);
+			//printf("RESP:\n%.*s\n",resp_len,resp);
 			res=get_content(resp,resp_len,&content,&content_len);
 			if(res){
 				JSON_Value *root;
@@ -835,6 +836,7 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 									chan.topic="no topic set";
 								else
 									chan.topic=topic;
+								get_messages(c,&chan.msgs,chan.id,100,NULL);
 								add_channel(clist,&chan);
 							}
 							free(name);free(topic);free(id);

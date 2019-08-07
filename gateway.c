@@ -13,6 +13,13 @@ enum{
 	GW_WAIT,
 };
 
+void DBGPRINT(const char *fmt,...)
+{
+	va_list ap;
+	va_start(ap,fmt);
+	vprintf(fmt,ap);
+}
+
 typedef struct{
 	int opcode;
 	int is_final;
@@ -105,7 +112,6 @@ int login_gateway(CONNECTION *c)
 					if(!res){
 						break;
 					}
-					printf("%s",line);
 					if(0==index){
 						res=get_resp_code(line,line_len);
 						if(101!=res){
@@ -356,7 +362,7 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		x=json_value_get_number(val);
 		*seq_num=(int)x;
 	}
-	printf("process payload:\n%.*s\n",data_len,data);
+	//printf("process payload:\n%.*s\n",data_len,data);
 
 	switch(opcode){
 	case 0: //process incoming command

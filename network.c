@@ -177,7 +177,7 @@ int send_data(ssl_context *ssl,BYTE *data,int len)
 	tick=GetTickCount();
 	while(1){
 		int res;
-		dump_hex(data,len);
+		//dump_hex(data,len);
 		res=ssl_write(ssl,data+offset,len-offset);
 		if(res>0){
 			offset+=res;
