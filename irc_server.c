@@ -5,6 +5,7 @@
 #include "config.h"
 #include "libstring.h"
 #include "discord.h"
+#include "irc_server.h"
 
 #pragma warning (disable:4996)
 
@@ -111,27 +112,25 @@ static void handle_join(const char *cmd)
 	free(tmp);
 }
 
-enum{
-	START_CHAN_LIST=321,
-	CHAN_LIST=322,
-	END_CHAN_LIST=323,
-	CHAN_MSG=100,
-	PRIV_MSG=110,
+typedef struct{
+	const char *str;
+	int code;
+}CODE_MAP;
+static CODE_MAP code_map[]={
+	{"START_CHAN_LIST",START_CHAN_LIST},
+	{"CHAN_LIST",CHAN_LIST},
+	{"END_CHAN_LIST",END_CHAN_LIST},
+	{"CHAN_MSG",CHAN_MSG},
+	{"PRIV_MSG",PRIV_MSG},
+	{"OK_JOIN_CHAN",OK_JOIN_CHAN},
+	{"NAME_LIST",NAME_LIST},
+	{"END_NAME_LIST",END_NAME_LIST},
+	{"UNKNOWN_CHAN",UNKNOWN_CHAN},
 };
+
 static int get_irc_msg_code(const char *str)
 {
 	int result=0;
-	typedef struct{
-		const char *str;
-		int code;
-	}CODE_MAP;
-	CODE_MAP code_map[]={
-		{"START_CHAN_LIST",START_CHAN_LIST},
-		{"CHAN_LIST",CHAN_LIST},
-		{"END_CHAN_LIST",END_CHAN_LIST},
-		{"CHAN_MSG",CHAN_MSG},
-		{"PRIV_MSG",PRIV_MSG},
-	};
 	int i,count;
 	count=_countof(code_map);
 	for(i=0;i<count;i++){
@@ -142,11 +141,74 @@ static int get_irc_msg_code(const char *str)
 	}
 	return result;
 }
+const char *get_irc_msg_str(int code)
+{
+	const char *result=0;
+	int i,count;
+	count=_countof(code_map);
+	for(i=0;i<count;i++){
+		if(code==code_map[i].code){
+			result=code_map[i].str;
+			break;
+		}
+	}
+	return result;
+}
+
+/*
+RECV: :my.server.name 321 test123 Channel :Users  Name
+RECV: :my.server.name 322 test123 #test1234 1 :
+RECV: :my.server.name 322 test123 #test123 1 :
+RECV: :my.server.name 323 test123 :End of /LIST
+*/
 
 static int handle_msg(SOCKET s,const char *str,const char *nick)
 {
-	if(startswithi(str,"START_CHAN_LIST")){
+	int result=FALSE;
+	int code;
+	char tmp[256]={0};
+	const char *data;
+	code=get_irc_msg_code(str);
+	data=seek_next_word(str);
+	switch(code){
+	case START_CHAN_LIST:
+		__snprintf(tmp,sizeof(tmp),":discord.server 321 %s Channel :Users Name\r\n",nick);
+		break;
+	case CHAN_LIST:
+		if(data){
+			__snprintf(tmp,sizeof(tmp),":discord.server 322 %s %s\r\n",nick,data);
+		}
+		break;
+	case END_CHAN_LIST:
+		__snprintf(tmp,sizeof(tmp),":discord.server 323 %s :End of /LIST\r\n",nick);
+		break;
+	case OK_JOIN_CHAN:
+		if(data){
+			__snprintf(tmp,sizeof(tmp),":%s!~uname@discord.server JOIN :%s\r\n",nick,data);
+		}
+		break;
+	case NAME_LIST:
+		if(data){
+			__snprintf(tmp,sizeof(tmp),":discord.server 353 %s = %s\r\n",nick,data);
+		}
+		break;
+	case END_NAME_LIST:
+		if(data){
+			__snprintf(tmp,sizeof(tmp),":discord.server 366 %s %s :End of /NAMES list.\r\n",nick,data);
+		}
+		break;
+	case UNKNOWN_CHAN:
+		__snprintf(tmp,sizeof(tmp),":discord.server 437 %s %s :Unknown channel\r\n",nick,data);
+		break;
+	default:
+		printf("ERROR:unhandled code:%i\n",code);
+		break;
 	}
+	if(tmp[0]){
+		net_send_str(s,tmp);
+		result=TRUE;
+	}
+	return result;
 }
 
 int push_irc_msg(const char *str)
@@ -234,7 +296,6 @@ int handle_connection(SOCKET s)
 			while(1){
 				int res;
 				char *msg=0;
-				int msg_len;
 				res=pop_irc_msg(&msg);
 				if(!res){
 					break;
@@ -242,13 +303,7 @@ int handle_connection(SOCKET s)
 				if(0==msg){
 					continue;
 				}
-				msg_len=strlen(msg);
-				if(msg_len){
-					if('\n'!=msg[msg_len-1]){
-						append_printf(&msg,&msg_len,"\r\n");
-					}
-				}
-				net_send_str(s,msg);
+				handle_msg(s,msg,nick);
 				free(msg);
 			}
 		}

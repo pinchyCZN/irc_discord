@@ -966,7 +966,7 @@ int pop_discord_cmd(DISCORD_CMD *cmd)
 	int result=FALSE;
 	enter_mutex();
 	if(0==g_cmd_list){
-		return result;
+		goto ERROR_POP;
 	}
 	cmd->cmd=g_cmd_list->cmd;
 	cmd->data=g_cmd_list->data;
@@ -976,6 +976,7 @@ int pop_discord_cmd(DISCORD_CMD *cmd)
 	if(g_cmd_list)
 		g_cmd_list->prev=0;
 	result=TRUE;
+ERROR_POP:
 	leave_mutex();
 	return result;
 }
@@ -1066,30 +1067,118 @@ static int extract_guild_chan(const char *str,char *guild,int guild_size,char *c
 	return result;
 }
 
+static int has_whitespace(const char *str)
+{
+	int result=FALSE;
+	int index=0;
+	while(1){
+		unsigned char a=str[index++];
+		if(0==a){
+			break;
+		}
+		if(isspace(a)){
+			result=TRUE;
+			break;
+		}
+	}
+	return result;
+}
+static int print_irc_chan(const char *guild,const char *chan,char *out,int out_len)
+{
+	const char *guild_quotes="";
+	const char *chan_quotes="";
+	if(has_whitespace(guild)){
+		guild_quotes="\"";
+	}
+	if(has_whitespace(chan)){
+		chan_quotes="\"";
+	}
+	return __snprintf(out,out_len,"#%s%s%s.%s%s%s",guild_quotes,guild,guild_quotes,chan_quotes,chan,chan_quotes);
+}
+
 static int process_join_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
 	char guild[80]={0};
 	char chan[80]={0};
+	char irc_chan[160]={0};
 	char *str;
+	int i,count;
+	CHANNEL *target_chan=0;
 	str=cmd->data;
 	extract_guild_chan(str,guild,sizeof(guild),chan,sizeof(chan));
+	print_irc_chan(guild,chan,irc_chan,sizeof(irc_chan));
 	printf("SRC=%s\n",str);
 	printf("guild=%s chan=%s\n",guild,chan);
+	count=g_guild_list.count;
+	for(i=0;i<count;i++){
+		GUILD *g;
+		int res;
+		g=&g_guild_list.guild[i];
+		res=stricmp(g->name,guild);
+		if(0==res){
+			int j,chan_count;
+			chan_count=g->channels.count;
+			for(j=0;j<chan_count;j++){
+				CHANNEL *c;
+				c=&g->channels.chan[j];
+				res=stricmp(c->name,chan);
+				if(0==res){
+					target_chan=c;
+					result=TRUE;
+					break;
+				}
+			}
+		}
+	}
+	if(result){
+		char tmp[256];
+		const char *prefix=get_irc_msg_str(OK_JOIN_CHAN);
+		__snprintf(tmp,sizeof(tmp),"%s %s",prefix,irc_chan);
+		push_irc_msg(tmp);
+		printf("OK JOIN CHANNEL: %s\n",irc_chan);
+		if(target_chan){
+			MESSAGE_LIST *mlist;
+			char *name_list=0;
+			int name_len=0;
+			int started=FALSE;
+			mlist=&target_chan->msgs;
+			count=mlist->count;
+			for(i=0;i<count;i++){
+				MESSAGE *m;
+				m=&mlist->m[i];
+				//353 nick = #n64dev :@APE @AlexAltea @Atomim 
+				if(!started){
+					append_printf(&name_list,&name_len,"%s :",irc_chan);
+					started=TRUE;
+				}
+				if(name_len){
+					if(strstr(name_list,m->author)){
+						continue;
+					}
+				}
+				append_printf(&name_list,&name_len,"%s ",m->author);
+				if(name_len>=350){
+					push_irc_msg(name_list);
+					name_list[0]=0;
+					started=FALSE;
+				}
+			}
+		}
+	}else{
+		char tmp[80];
+		__snprintf(tmp,sizeof(tmp),"%s %s",get_irc_msg_str(UNKNOWN_CHAN),irc_chan);
+		push_irc_msg(tmp);
+	}
 	return result;
 }
 
-/*
-321 CHannel Users Name
-322 #blah 5 chan topic
-323 END of list
-*/
 static int process_list_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
 	int i,count;
 	char tmp[256]={0};
-	_snprintf(tmp,sizeof(tmp),"START_CHAN_LIST");
+	_snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(START_CHAN_LIST));
 	push_irc_msg(tmp);
 	count=g_guild_list.count;
 	for(i=0;i<count;i++){
@@ -1100,15 +1189,16 @@ static int process_list_chan(DISCORD_CMD *cmd)
 		chan_count=guild->channels.count;
 		for(j=0;j<chan_count;j++){
 			CHANNEL *chan;
+			const char *prefix;
+			char irc_chan[160]={0};
 			chan=&guild->channels.chan[j];
-			memset(tmp,0,sizeof(tmp));
-			_snprintf(tmp,sizeof(tmp),"CHAN_LIST #\"%s\".\"%s\" %i %s",guild->name,chan->name,0,chan->topic);
-			tmp[sizeof(tmp)-1]=0;
+			prefix=get_irc_msg_str(CHAN_LIST);
+			print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
+			__snprintf(tmp,sizeof(tmp),"%s %s %i :%s",prefix,irc_chan,0,chan->topic);
 			push_irc_msg(tmp);
 		}
-
 	}
-	_snprintf(tmp,sizeof(tmp),"END_CHAN_LIST");
+	__snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(END_CHAN_LIST));
 	push_irc_msg(tmp);
 	return result;
 }
@@ -1134,7 +1224,7 @@ static int process_requests(CONNECTION *c)
 		{
 			DISCORD_CMD cmd={0};
 			int res;
-			printf("external request event\n");
+			printf("DISCORD COMMAND EVENT\n");
 			res=pop_discord_cmd(&cmd);
 			if(res){
 				switch(cmd.cmd){

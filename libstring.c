@@ -384,3 +384,17 @@ const char *seek_next_word(const char *str)
 	return result;
 }
 
+int __snprintf(char *buf,int buf_len,const char *fmt,...)
+{
+	int result=0;
+	va_list ap;
+	va_start(ap,fmt);
+	result=_vsnprintf(buf,buf_len,fmt,ap);
+	if(buf_len){
+		buf[buf_len-1]=0;
+	}
+	if(result<0){
+		result=0;
+	}
+	return result;
+}
