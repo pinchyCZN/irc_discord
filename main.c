@@ -29,10 +29,15 @@ typedef struct{
 	int count;
 }MESSAGE_LIST;
 typedef struct{
+	char **nick;
+	int nick_count;
+}NICK_LIST;
+typedef struct{
 	char *name;
 	char *topic;
 	char *id;
 	MESSAGE_LIST msgs;
+	NICK_LIST nicks;
 }CHANNEL;
 typedef struct{
 	CHANNEL *chan;
@@ -122,6 +127,43 @@ ERROR_ADD_CHAN:
 	}
 	return result;
 }
+static int add_nick(NICK_LIST *nlist,const char *nick)
+{
+	int result=FALSE;
+	int i,count;
+	count=nlist->nick_count;
+	if(count>=1000){
+		return result;
+	}
+	for(i=0;i<count;i++){
+		char *name=nlist->nick[i];
+		if(0==strcmp(name,nick)){
+			result=TRUE;
+			break;
+		}
+	}
+	if(!result){
+		char *tmp_nick;
+		tmp_nick=strdup(nick);
+		if(tmp_nick){
+			char **tmp;
+			int index;
+			index=count;
+			count++;
+			tmp=realloc(nlist->nick,count*sizeof(char*));
+			if(tmp){
+				tmp[index]=tmp_nick;
+				nlist->nick=tmp;
+				nlist->nick_count=count;
+				result=TRUE;
+			}else{
+				free(tmp_nick);
+			}
+		}
+	}
+	return result;
+}
+
 static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
 {
 	int result=FALSE;
@@ -184,6 +226,21 @@ static int remove_all_msg(MESSAGE_LIST *mlist)
 	mlist->count=0;
 	return TRUE;
 }
+static int remove_all_nicks(NICK_LIST *nlist)
+{
+	int i,count;
+	count=nlist->nick_count;
+	for(i=0;i<count;i++){
+		char *tmp=nlist->nick[i];
+		if(tmp){
+			free(tmp);
+			nlist->nick[i]=0;
+		}
+	}
+	nlist->nick=0;
+	nlist->nick_count=0;
+	return TRUE;
+}
 static int remove_all_channels(CHANNEL_LIST *clist)
 {
 	int i,count;
@@ -195,6 +252,7 @@ static int remove_all_channels(CHANNEL_LIST *clist)
 		free(tmp->name);
 		free(tmp->topic);
 		remove_all_msg(&tmp->msgs);
+		remove_all_nicks(&tmp->nicks);
 	}
 	if(count>0){
 		free(clist->chan);
@@ -490,7 +548,6 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 	//printf("REQ:%s\n---\n",req);
 	res=get_response(c,&resp,&resp_len);
 	if(res){
-		//printf("RESP:\n%.*s\n",resp_len,resp);
 		res=get_resp_code(resp,resp_len);
 		if(200==res){
 			char *content=0;
@@ -508,6 +565,8 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 					result=TRUE;
 				}
 			}
+		}else{
+			printf("RESP:\n%.*s\n",resp_len,resp);
 		}
 	}else{
 		printf("failed to get response\n");
@@ -691,6 +750,7 @@ int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 						GUILD g={0};
 						g.id=id;
 						g.name=name;
+						fix_spaced_str(name);
 						if(!add_guild(glist,&g)){
 							result=FALSE;
 						}
@@ -716,6 +776,8 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 	int result=FALSE;
 	char *data=0;
 	int data_len=0;
+	if(count>100)
+		count=100;
 	append_printf(&data,&data_len,"GET /api/v6/channels/%s/messages",chan_id);
 	append_printf(&data,&data_len,"?limit=%u",count);
 	if(before_id && before_id[0]!=0){
@@ -764,7 +826,7 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
 						msg.timestamp=(char*)timestamp;
-						printf("msg:%s %s\n",auth,content);
+						//printf("msg:%s %s\n",auth,content);
 						if(!add_message(mlist,&msg)){
 							printf("Failed to add msg %s\n",id);
 						}
@@ -832,11 +894,11 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 								CHANNEL chan={0};
 								chan.id=id;
 								chan.name=name;
+								fix_spaced_str(name);
 								if(0==topic)
 									chan.topic="no topic set";
 								else
 									chan.topic=topic;
-								get_messages(c,&chan.msgs,chan.id,100,NULL);
 								add_channel(clist,&chan);
 							}
 							free(name);free(topic);free(id);
@@ -871,6 +933,94 @@ int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
 			result=FALSE;
 		}
 	}
+	return result;
+}
+int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
+{
+	int result=FALSE;
+	int i,count;
+	count=glist->count;
+	for(i=0;i<count;i++){
+		int j,chan_count;
+		GUILD *g=&glist->guild[i];
+		chan_count=g->channels.count;
+		for(j=0;j<chan_count;j++){
+			CHANNEL *chan;
+			int k,msg_count;
+			chan=&g->channels.chan[j];
+			remove_all_msg(&chan->msgs);
+			get_messages(c,&chan->msgs,chan->id,100,NULL);
+			printf("%s %s msg count %i\n",g->name,chan->name,chan->msgs.count);
+			msg_count=chan->msgs.count;
+			for(k=0;k<msg_count;k++){
+				MESSAGE *m=&chan->msgs.m[k];
+				add_nick(&chan->nicks,m->author);
+			}
+		}
+	}
+	return result;
+}
+
+static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
+{
+	int result=FALSE;
+	char *data=0;
+	int data_len=0;
+	char *json_str=0;
+	JSON_Value *root_val;
+	JSON_Object *root_obj;
+	int do_post=FALSE;
+	append_printf(&data,&data_len,"POST /api/v6/channels/%s/messages HTTP/1.1\r\n",chan_id);
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n",g_token);
+	root_val=json_value_init_object();
+	root_obj=json_value_get_object(root_val);
+	/*
+	{
+	"content": "Hello, World!",
+	"tts": false,
+	}
+	*/
+	json_object_set_string(root_obj,"content",msg);
+	json_object_set_boolean(root_obj,"tts",0);
+	json_str=json_serialize_to_string(root_val);
+	if(json_str){
+		append_printf(&data,&data_len,"Content-Length: %u\r\n",strlen(json_str));
+		append_printf(&data,&data_len,"\r\n%s",json_str);
+		json_free_serialized_string(json_str);
+		do_post=TRUE;
+	}
+	json_value_free(root_val);
+	if(!do_post){
+		printf("unable to create POST msg request\n");
+		goto ERROR_POST;
+	}
+	{
+		ssl_context *ssl;
+		int msg_len;
+		char *resp=0;
+		int resp_len=0;
+		int res;
+		//printf("REQ:%s\n",data);
+		//printf("---\n");
+		ssl=&c->ssl;
+		msg_len=strlen(data);
+		ssl_write(ssl,(BYTE*)data,msg_len);
+		res=get_response(c,&resp,&resp_len);
+		if(res){
+			res=get_resp_code(resp,resp_len);
+			if(200!=res){
+				printf("failed to POST message:%*s",resp_len,resp);
+			}
+		}else{
+			printf("failed to get response for POST message\n");
+		}
+	}
+ERROR_POST:
+	free(data);
 	return result;
 }
 
@@ -931,7 +1081,7 @@ static void leave_mutex()
 {
 	LeaveCriticalSection(&g_mutex);
 }
-int add_discord_cmd(int cmd,char *cmd_data)
+int add_discord_cmd(int cmd,const char *cmd_data)
 {
 	int result=FALSE;
 	DISCORD_CMD *tmp;
@@ -1140,31 +1290,31 @@ static int process_join_chan(DISCORD_CMD *cmd)
 		push_irc_msg(tmp);
 		printf("OK JOIN CHANNEL: %s\n",irc_chan);
 		if(target_chan){
-			MESSAGE_LIST *mlist;
+			NICK_LIST *nlist;
 			char *name_list=0;
 			int name_len=0;
 			int started=FALSE;
-			mlist=&target_chan->msgs;
-			count=mlist->count;
+			nlist=&target_chan->nicks;
+			count=nlist->nick_count;
 			for(i=0;i<count;i++){
-				MESSAGE *m;
-				m=&mlist->m[i];
+				char *name;
 				//353 nick = #n64dev :@APE @AlexAltea @Atomim 
+				name=nlist->nick[i];
 				if(!started){
-					append_printf(&name_list,&name_len,"%s :",irc_chan);
+					append_printf(&name_list,&name_len,"%s %s :",get_irc_msg_str(NAME_LIST),irc_chan);
 					started=TRUE;
 				}
-				if(name_len){
-					if(strstr(name_list,m->author)){
-						continue;
-					}
-				}
-				append_printf(&name_list,&name_len,"%s ",m->author);
+				append_printf(&name_list,&name_len,"%s ",name);
 				if(name_len>=350){
 					push_irc_msg(name_list);
 					name_list[0]=0;
 					started=FALSE;
 				}
+			}
+			if(name_list){
+				if(name_list[0])
+					push_irc_msg(name_list);
+				free(name_list);
 			}
 		}
 	}else{
@@ -1196,12 +1346,61 @@ static int process_list_chan(DISCORD_CMD *cmd)
 			chan=&guild->channels.chan[j];
 			prefix=get_irc_msg_str(CHAN_LIST);
 			print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
-			__snprintf(tmp,sizeof(tmp),"%s %s %i :%s",prefix,irc_chan,0,chan->topic);
+			__snprintf(tmp,sizeof(tmp),"%s %s %i :%s",prefix,irc_chan,chan->nicks.nick_count,chan->topic);
 			push_irc_msg(tmp);
 		}
 	}
 	__snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(END_CHAN_LIST));
 	push_irc_msg(tmp);
+	return result;
+}
+
+static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
+{
+	int result=FALSE;
+	int i,count;
+	char chan_name[160]={0};
+	const char *chan_msg;
+	int exit=FALSE;
+	get_word(cmd->data,chan_name,sizeof(chan_name));
+	chan_msg=seek_next_word(cmd->data);
+	if(0==chan_msg || 0==chan_name[0]){
+		printf("cant find chan data from:%s",cmd->data);
+		return result;
+	}
+	count=g_guild_list.count;
+	for(i=0;i<count;i++){
+		int j;
+		int chan_count;
+		GUILD *guild;
+		guild=&g_guild_list.guild[i];
+		chan_count=guild->channels.count;
+		for(j=0;j<chan_count;j++){
+			CHANNEL *chan;
+			const char *prefix;
+			char irc_chan[160]={0};
+			chan=&guild->channels.chan[j];
+			prefix=get_irc_msg_str(CHAN_LIST);
+			print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
+			if(0==stricmp(irc_chan,chan_name)){
+				char *tmp;
+				exit=TRUE;
+				if(':'==chan_msg[0]){
+					chan_msg++;
+				}
+				tmp=strdup(chan_msg);
+				if(tmp){
+					trim_right(tmp);
+					post_message(c,chan->id,tmp);
+					free(tmp);
+				}
+				break;
+			}
+		}
+		if(exit){
+			break;
+		}
+	}
 	return result;
 }
 
@@ -1213,12 +1412,12 @@ static int process_requests(CONNECTION *c)
 	DWORD res;
 	hlist[hcount++]=(HANDLE)c->sock;
 	hlist[hcount++]=g_event;
-	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,1000,FALSE);
+	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,100,FALSE);
 	switch(res){
 	case WAIT_OBJECT_0: //socket
 		{
+			result=TRUE;
 			printf("socket event\n");
-
 		}
 		break;
 	case WAIT_OBJECT_0+1: //req
@@ -1226,6 +1425,7 @@ static int process_requests(CONNECTION *c)
 		{
 			DISCORD_CMD cmd={0};
 			int res;
+			result=TRUE;
 			printf("DISCORD COMMAND EVENT\n");
 			res=pop_discord_cmd(&cmd);
 			if(res){
@@ -1239,6 +1439,7 @@ static int process_requests(CONNECTION *c)
 				case CMD_GET_MSGS:
 					break;
 				case CMD_POST_MSG:
+					process_post_msg(c,&cmd);
 					break;
 				}
 				free_discord_cmd(&cmd);
@@ -1247,11 +1448,14 @@ static int process_requests(CONNECTION *c)
 			}
 		}
 		break;
+	case WAIT_TIMEOUT:
+		result=TRUE;
+		break;
 	default:
 		Sleep(100);
+		result=FALSE;
 		break;
 	}
-	result=TRUE;
 	return result;
 }
 
@@ -1263,6 +1467,7 @@ void discord_thread(void *args)
 		DISC_CONNECT=0,
 		DISC_GET_GUILDS,
 		DISC_GET_CHANNELS,
+		DISC_GET_MESSAGES,
 		DISC_GET_GATEWAY,
 		DISC_WAIT_CMD,
 	};
@@ -1292,6 +1497,10 @@ void discord_thread(void *args)
 		case DISC_GET_CHANNELS:
 			get_all_channels(&con,&g_guild_list);
 			dump_guild_stuff(&g_guild_list);
+			state=DISC_GET_MESSAGES;
+			break;
+		case DISC_GET_MESSAGES:
+			get_all_messages(&con,&g_guild_list);
 			state=DISC_GET_GATEWAY;
 			break;
 		case DISC_GET_GATEWAY:

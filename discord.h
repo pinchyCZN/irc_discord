@@ -5,4 +5,4 @@ enum{
 	CMD_POST_MSG,
 };
 
-int add_discord_cmd(int cmd,char *cmd_data);
+int add_discord_cmd(int cmd,const char *cmd_data);

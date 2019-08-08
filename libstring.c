@@ -168,7 +168,7 @@ int trim_right(char *str)
 	int i,len;
 	len=strlen(str);
 	for(i=len-1;i>=0;i--){
-		char a;
+		unsigned char a;
 		a=str[i];
 		if(isspace(a)){
 			str[i]=0;
@@ -364,8 +364,11 @@ const char *seek_next_word(const char *str)
 	const char *result=0;
 	int index=0;
 	int state=0;
+	if(0==str){
+		return result;
+	}
 	while(1){
-		char a=str[index];
+		unsigned char a=str[index];
 		if(0==a){
 			break;
 		}
@@ -384,6 +387,56 @@ const char *seek_next_word(const char *str)
 	return result;
 }
 
+int get_word(char *str,char *out,int out_size)
+{
+	int result=FALSE;
+	int index=0;
+	int out_index=0;
+	int state=0;
+	if(0==str || 0==out){
+		return result;
+	}
+	while(1){
+		int store_char=FALSE;
+		int exit=FALSE;
+		unsigned char a=str[index++];
+		if(0==a){
+			store_char=TRUE;
+			exit=TRUE;
+		}
+		if(0==state){
+			if(!isspace(a)){
+				store_char=TRUE;
+				state=1;
+			}
+		}else if(1==state){
+			if(isspace(a)){
+				a=0;
+				store_char=TRUE;
+				exit=TRUE;
+			}else{
+				store_char=TRUE;
+			}
+		}else{
+			exit=TRUE;
+		}
+		if(store_char){
+			if(out_index>=out_size){
+				break;
+			}
+			out[out_index++]=a;
+			result=TRUE;
+		}
+		if(exit){
+			break;
+		}
+	}
+	if(out_size){
+		out[out_size-1]=0;
+	}
+	return result;
+}
+
 int __snprintf(char *buf,int buf_len,const char *fmt,...)
 {
 	int result=0;
@@ -397,4 +450,19 @@ int __snprintf(char *buf,int buf_len,const char *fmt,...)
 		result=0;
 	}
 	return result;
+}
+
+void fix_spaced_str(char *str)
+{
+	int index=0;
+	while(1){
+		unsigned char a=str[index];
+		if(0==a){
+			break;
+		}
+		if(isspace(a)){
+			str[index]='_';
+		}
+		index++;
+	}
 }

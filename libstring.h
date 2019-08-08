@@ -30,4 +30,8 @@ int null_str(unsigned char **data,int data_len);
 
 const char *seek_next_word(const char *str);
 
+int get_word(char *str,char *out,int out_size);
+
 int __snprintf(char *buf,int buf_len,const char *fmt,...);
+
+void fix_spaced_str(char *str);

@@ -347,9 +347,19 @@ int handle_connection(SOCKET s)
 						}
 					}else if(startswithi(cmd,"LIST")){
 						add_discord_cmd(CMD_LIST_CHAN,"");
+						cmd_valid=TRUE;
+					}else if(startswithi(cmd,"PRIVMSG")){
+						const char *tmp;
+						tmp=seek_next_word(line);
+						if(tmp){
+							cmd_valid=TRUE;
+							add_discord_cmd(CMD_POST_MSG,tmp);
+						}
 					}
-					_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
-					net_send_str(s,line);
+					if(!cmd_valid){
+						_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
+						net_send_str(s,line);
+					}
 				}
 				break;
 			}

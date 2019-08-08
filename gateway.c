@@ -7,7 +7,7 @@
 
 static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
-
+static int g_disable_dbgprint=FALSE;
 enum{
 	GW_LOGIN=0,
 	GW_WAIT,
@@ -16,6 +16,8 @@ enum{
 void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
+	if(g_disable_dbgprint)
+		return;
 	va_start(ap,fmt);
 	vprintf(fmt,ap);
 }
@@ -310,7 +312,7 @@ int send_identify(ssl_context *ssl)
 	}
 	slen=strlen(buf);
 	result=send_ws_payload(ssl,1,(BYTE*)buf,slen);
-	printf("sending ident:\n%.*s\n",buf_len,buf);
+	//DBGPRINT("sending ident:\n%.*s\n",buf_len,buf);
 	free(buf);
 	return result;
 }
@@ -329,7 +331,7 @@ int send_heartbeat(ssl_context *ssl,int seq_num)
 	}
 	slen=strlen(buf);
 	result=send_ws_payload(ssl,1,(BYTE*)buf,slen);
-	printf("sending heartbeat:\n%.*s\n",buf_len,buf);
+	//DBGPRINT("sending heartbeat:\n%.*s\n",buf_len,buf);
 	free(buf);
 	return result;
 }
@@ -345,11 +347,11 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 	double x;
 	ssl=&con->ssl;
 	//{"t":null,"s":null,"op":10,"d":{"heartbeat_interval":41250,"_trace":["[\"gateway-prd-main-g8rb\",{\"micros\":0.0}]"]}}
-	//printf("%.*s\n",data_len,data);
+	//DBGPRINT("%.*s\n",data_len,data);
 	root=json_parse_string(data);
 	if(json_value_get_type(root)!=JSONObject){
 		json_value_free(root);
-		printf("Error paring json\n");
+		DBGPRINT("Error paring json\n");
 		return result;
 	}
 	obj=json_value_get_object(root);
@@ -362,16 +364,17 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		x=json_value_get_number(val);
 		*seq_num=(int)x;
 	}
-	//printf("process payload:\n%.*s\n",data_len,data);
+	//DBGPRINT("process payload:\n%.*s\n",data_len,data);
 
 	switch(opcode){
 	case 0: //process incoming command
-		printf("disc op 0\n");
+		DBGPRINT("disc op 0\n");
 		break;
 	case 9: //session invalidated
-		printf("disc op 9 session invalid\n");
+		DBGPRINT("disc op 9 session invalid\n");
 		break;
 	case 10: //hello
+		DBGPRINT("sending hello\n");
 		send_identify(ssl);
 		g_hbeat_interval=(DWORD)json_object_dotget_number(obj,"d.heartbeat_interval");
 		if(g_hbeat_interval<10000){
@@ -379,10 +382,10 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		}
 		break;
 	case 11: //hrtbt ack
-		printf("recv heartbeat\n");
+		DBGPRINT("recv heartbeat\n");
 		break;
 	default:
-		printf("unhandled opcode:%i\n",opcode);
+		DBGPRINT("unhandled opcode:%i\n",opcode);
 		break;
 	}
 
@@ -394,7 +397,6 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 int send_pong(ssl_context *ssl,BYTE *data,int data_len)
 {
 	int result=FALSE;
-	printf("sending pong\n");
 	send_ws_payload(ssl,10,data,data_len);
 	return result;
 }
@@ -414,18 +416,18 @@ int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,
 		if(!timeout){
 			(*error_count)++;
 		}else{
-			//printf("timeout\n");
+			//DBGPRINT("timeout\n");
 		}
 		return result;
 	}
 	{
 		int opcode;
 		opcode=payload.opcode;
-		printf("ws opcode=%i\n",opcode);
 		switch(opcode){
 		case 0: // text packet
 		case 1: // binary packet
 		case 2: // continuation
+			DBGPRINT("gateway data packet\n");
 			append_data(&tmp,&tmp_size,payload.data,payload.len);
 			if(payload.is_final){
 				null_str(&tmp,tmp_size);
@@ -436,17 +438,18 @@ int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,
 			}
 			break;
 		case 8: // close
-			printf("%.*s\n",payload.len,payload.data);
+			DBGPRINT("gateway close\n");
 			SetEvent(g_gwevent);
 			*state=GW_LOGIN;
 			*exit_ws=TRUE;
 			Sleep(500000);
 			break;
 		case 9: // ping
+			DBGPRINT("gateway sending pong\n");
 			send_pong(ssl,payload.data,payload.len);
 			break;
 		default:
-			printf("unhandled opcode %i\n",opcode);
+			DBGPRINT("gateway unhandled opcode %i\n",opcode);
 			break;
 		}
 		if(payload.data){
@@ -465,22 +468,22 @@ void gateway_thread(void *args)
 	if(NULL==g_gwevent){
 		g_gwevent=CreateEventA(NULL,FALSE,FALSE,"GatewayEvent");
 		if(NULL==g_gwevent){
-			printf("gateway event not created\n");
+			DBGPRINT("gateway event not created\n");
 			return;
 		}
 	}
 	while(1){
 		DWORD res;
-		printf("waiting for gateway event\n");
+		DBGPRINT("waiting for gateway event\n");
 		res=WaitForSingleObject(g_gwevent,INFINITE);
 		if(WAIT_OBJECT_0==res){
 			switch(state){
 			case GW_LOGIN:
 				if(0==g_gateway[0] && FALSE){
-					printf("no gateway\n");
+					DBGPRINT("no gateway\n");
 					break;
 				}else{
-					printf("gateway login\n");
+					DBGPRINT("gateway login\n");
 					res=login_gateway(&con);
 					if(res){
 						BYTE *payload=0;
@@ -506,11 +509,11 @@ void gateway_thread(void *args)
 								}
 							}
 							if(error_count>5){
-								printf("error count exceeded\n");
+								DBGPRINT("error count exceeded\n");
 								break;
 							}
 							if(exit_ws){
-								printf("exit ws\n");
+								DBGPRINT("exit ws\n");
 								break;
 							}
 						}
