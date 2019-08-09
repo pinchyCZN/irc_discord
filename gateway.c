@@ -365,7 +365,7 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		x=json_value_get_number(val);
 		*seq_num=(int)x;
 	}
-	DBGPRINT("process payload:\n%.*s\n",data_len,data);
+	//DBGPRINT("process payload:\n%.*s\n",data_len,data);
 
 	switch(opcode){
 	case 0: //process incoming command

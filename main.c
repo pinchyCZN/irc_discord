@@ -831,8 +831,8 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
 						msg.timestamp=(char*)timestamp;
-						//if(pinned)
-						//	printf("msg:%s %s\n",auth,content);
+						if(pinned)
+							printf("msg:%s %s\n",auth,content);
 						if(!add_message(mlist,&msg)){
 							printf("Failed to add msg %s\n",id);
 						}
@@ -1283,16 +1283,18 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 	}
 }
 
-static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index)
+static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan)
 {	
 	int i;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
+		char nick[80]={0};
 		if(i>=mlist->count)
 			break;
 		m=&mlist->m[i];
-
-
+		__snprintf(nick,sizeof(nick),"%s",m->author);
+		fix_spaced_str(nick);
+		post_msg_to_irc(irc_chan,nick,m->msg);
 	}
 }
 
@@ -1364,7 +1366,7 @@ static int process_join_chan(DISCORD_CMD *cmd)
 					push_irc_msg(name_list);
 				free(name_list);
 			}
-			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count);
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan);
 		}
 	}else{
 		char tmp[80];
@@ -1500,25 +1502,6 @@ static int process_chan_msg(DISCORD_CMD *cmd)
 			}
 		}
 		post_msg_to_irc(irc_chan,nick,content);
-		/*
-		content_len=strlen(content);
-		for(i=0;i<content_len;i+=block_size){
-			char irc_msg[512]={0};
-			char *chunk;
-			int chunk_len;
-			chunk=content+i;
-			chunk_len=content_len-i;
-			if(chunk_len>block_size){
-				chunk_len=block_size;
-			}
-			if(chunk_len<=0){
-				break;
-			}
-			//CHAN_MSG chan,nick,msg
-			__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
-			push_irc_msg(irc_msg);
-		}
-		*/
 	}
 EXIT_CHAN_MSG:
 	free(content);
