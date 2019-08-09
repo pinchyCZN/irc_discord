@@ -37,6 +37,7 @@ typedef struct{
 	char *topic;
 	char *id;
 	MESSAGE_LIST msgs;
+	MESSAGE_LIST pin_msgs;
 	NICK_LIST nicks;
 }CHANNEL;
 typedef struct{
@@ -771,17 +772,21 @@ int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 
 }
 
-static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,int count,const char *before_id)
+static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,int count,const char *before_id,int pinned)
 {
 	int result=FALSE;
 	char *data=0;
 	int data_len=0;
 	if(count>100)
 		count=100;
-	append_printf(&data,&data_len,"GET /api/v6/channels/%s/messages",chan_id);
-	append_printf(&data,&data_len,"?limit=%u",count);
-	if(before_id && before_id[0]!=0){
-		append_printf(&data,&data_len,"&before=",before_id);
+	if(pinned){
+		append_printf(&data,&data_len,"GET /api/v6/channels/%s/pins",chan_id);
+	}else{
+		append_printf(&data,&data_len,"GET /api/v6/channels/%s/messages",chan_id);
+		append_printf(&data,&data_len,"?limit=%u",count);
+		if(before_id && before_id[0]!=0){
+			append_printf(&data,&data_len,"&before=",before_id);
+		}
 	}
 	append_printf(&data,&data_len," HTTP/1.1\r\n");
 	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
@@ -826,7 +831,8 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
 						msg.timestamp=(char*)timestamp;
-						//printf("msg:%s %s\n",auth,content);
+						//if(pinned)
+						//	printf("msg:%s %s\n",auth,content);
 						if(!add_message(mlist,&msg)){
 							printf("Failed to add msg %s\n",id);
 						}
@@ -949,11 +955,17 @@ int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			int k,msg_count;
 			chan=&g->channels.chan[j];
 			remove_all_msg(&chan->msgs);
-			get_messages(c,&chan->msgs,chan->id,100,NULL);
+			get_messages(c,&chan->msgs,chan->id,100,NULL,FALSE);
+			get_messages(c,&chan->pin_msgs,chan->id,0,NULL,TRUE);
 			printf("%s %s msg count %i\n",g->name,chan->name,chan->msgs.count);
 			msg_count=chan->msgs.count;
 			for(k=0;k<msg_count;k++){
 				MESSAGE *m=&chan->msgs.m[k];
+				add_nick(&chan->nicks,m->author);
+			}
+			msg_count=chan->pin_msgs.count;
+			for(k=0;k<msg_count;k++){
+				MESSAGE *m=&chan->pin_msgs.m[k];
 				add_nick(&chan->nicks,m->author);
 			}
 		}
@@ -1248,6 +1260,42 @@ static int print_irc_chan(const char *guild,const char *chan,char *out,int out_l
 	return __snprintf(out,out_len,"#%s%s%s.%s%s%s",guild_quotes,guild,guild_quotes,chan_quotes,chan,chan_quotes);
 }
 
+static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *msg)
+{
+	int i,msg_len;
+	const int block_size=350;
+	msg_len=strlen(msg);
+	for(i=0;i<msg_len;i+=block_size){
+		char irc_msg[512]={0};
+		const char *chunk;
+		int chunk_len;
+		chunk=msg+i;
+		chunk_len=msg_len-i;
+		if(chunk_len>block_size){
+			chunk_len=block_size;
+		}
+		if(chunk_len<=0){
+			break;
+		}
+		//CHAN_MSG chan,nick,msg
+		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
+		push_irc_msg(irc_msg);
+	}
+}
+
+static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index)
+{	
+	int i;
+	for(i=start_index;i<end_index;i++){
+		MESSAGE *m;
+		if(i>=mlist->count)
+			break;
+		m=&mlist->m[i];
+
+
+	}
+}
+
 static int process_join_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
@@ -1316,6 +1364,7 @@ static int process_join_chan(DISCORD_CMD *cmd)
 					push_irc_msg(name_list);
 				free(name_list);
 			}
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count);
 		}
 	}else{
 		char tmp[80];
@@ -1404,6 +1453,78 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 	return result;
 }
 
+static int process_chan_msg(DISCORD_CMD *cmd)
+{
+	int result=FALSE;
+	char chan_id[40]={0};
+	char nick[80]={0};
+	char *content=0;
+	int content_size=4096;
+	const char *str=cmd->data;
+	if(0==str){
+		return result;
+	}
+	content=calloc(content_size,1);
+	if(0==content){
+		return result;
+	}
+	//chan id, username, content
+	get_word(str,chan_id,sizeof(chan_id));
+	str=seek_next_word(str);
+	get_word(str,nick,sizeof(nick));
+	str=seek_next_word(str);
+	if(0==str){
+		goto EXIT_CHAN_MSG;
+	}
+	strncpy(content,str,content_size);
+	{
+		int i,count;
+		char irc_chan[160]={0};
+		count=g_guild_list.count;
+		for(i=0;i<count;i++){
+			GUILD *g;
+			int j;
+			int chan_count;
+			g=&g_guild_list.guild[i];
+			chan_count=g->channels.count;
+			for(j=0;j<chan_count;j++){
+				CHANNEL *chan;
+				chan=&g->channels.chan[j];
+				if(0==stricmp(chan->id,chan_id)){
+					print_irc_chan(g->name,chan->name,irc_chan,sizeof(irc_chan));
+					break;
+				}
+			}
+			if(irc_chan[0]){
+				break;
+			}
+		}
+		post_msg_to_irc(irc_chan,nick,content);
+		/*
+		content_len=strlen(content);
+		for(i=0;i<content_len;i+=block_size){
+			char irc_msg[512]={0};
+			char *chunk;
+			int chunk_len;
+			chunk=content+i;
+			chunk_len=content_len-i;
+			if(chunk_len>block_size){
+				chunk_len=block_size;
+			}
+			if(chunk_len<=0){
+				break;
+			}
+			//CHAN_MSG chan,nick,msg
+			__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
+			push_irc_msg(irc_msg);
+		}
+		*/
+	}
+EXIT_CHAN_MSG:
+	free(content);
+	return result;
+}
+
 static int process_requests(CONNECTION *c)
 {
 	int result=FALSE;
@@ -1440,6 +1561,9 @@ static int process_requests(CONNECTION *c)
 					break;
 				case CMD_POST_MSG:
 					process_post_msg(c,&cmd);
+					break;
+				case CMD_CHAN_MSG:
+					process_chan_msg(&cmd);
 					break;
 				}
 				free_discord_cmd(&cmd);

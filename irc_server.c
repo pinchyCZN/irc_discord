@@ -166,7 +166,7 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 {
 	int result=FALSE;
 	int code;
-	char tmp[256]={0};
+	char tmp[512]={0};
 	const char *data;
 	code=get_irc_msg_code(str);
 	data=seek_next_word(str);
@@ -195,6 +195,24 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 	case END_NAME_LIST:
 		if(data){
 			__snprintf(tmp,sizeof(tmp),":discord.server 366 %s %s :End of /NAMES list.\r\n",nick,data);
+		}
+		break;
+	case CHAN_MSG:
+		if(data){
+			char chan[160]={0};
+			char nick[80]={0};
+			const char *msg=0;
+			const char *ptr=data;
+			//chan,nick,content
+			get_word(ptr,chan,sizeof(chan));
+			ptr=seek_next_word(ptr);
+			get_word(ptr,nick,sizeof(nick));
+			ptr=seek_next_word(ptr);
+			msg=ptr;
+			if(chan[0] && nick[0] && msg){
+				//:chopchop1!~chopchop1@my.server.name PRIVMSG #test123 :asdfsadf
+				__snprintf(tmp,sizeof(tmp),":%s!~uname@discord.server PRIVMSG %s :%s\r\n",nick,chan,msg);
+			}
 		}
 		break;
 	case UNKNOWN_CHAN:

@@ -387,7 +387,7 @@ const char *seek_next_word(const char *str)
 	return result;
 }
 
-int get_word(char *str,char *out,int out_size)
+int get_word(const char *str,char *out,int out_size)
 {
 	int result=FALSE;
 	int index=0;

@@ -4,6 +4,7 @@
 #include "config.h"
 #include "json.h"
 #include "parson.h"
+#include "discord.h"
 
 static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
@@ -351,7 +352,7 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 	root=json_parse_string(data);
 	if(json_value_get_type(root)!=JSONObject){
 		json_value_free(root);
-		DBGPRINT("Error paring json\n");
+		DBGPRINT("Error parsing json\n");
 		return result;
 	}
 	obj=json_value_get_object(root);
@@ -364,11 +365,45 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		x=json_value_get_number(val);
 		*seq_num=(int)x;
 	}
-	//DBGPRINT("process payload:\n%.*s\n",data_len,data);
+	DBGPRINT("process payload:\n%.*s\n",data_len,data);
 
 	switch(opcode){
 	case 0: //process incoming command
-		DBGPRINT("disc op 0\n");
+		{
+			const char *cmd=0;
+			cmd=json_object_get_string(obj,"t");
+			if(cmd){
+				if(0==strcmp(cmd,"MESSAGE_CREATE")
+					|| 0==strcmp(cmd,"MESSAGE_UPDATE")){
+					const char *content;
+					const char *uname;
+					const char *chan_id;
+					content=json_object_dotget_string(obj,"d.content");
+					uname=json_object_dotget_string(obj,"d.author.username");
+					chan_id=json_object_dotget_string(obj,"d.channel_id");
+					if(content && uname && chan_id){
+						char *tmp;
+						int tmp_len;
+						tmp_len=strlen(content)+strlen(uname)+strlen(chan_id)+8;
+						tmp=calloc(tmp_len,1);
+						if(tmp){
+							char *tmp_uname;
+							tmp_uname=_strdup(uname);
+							if(tmp_uname){
+								fix_spaced_str(tmp_uname);
+								//chan id, username, content
+								__snprintf(tmp,tmp_len,"%s %s %s",chan_id,tmp_uname,content);
+								add_discord_cmd(CMD_CHAN_MSG,tmp);
+								free(tmp_uname);
+							}
+							free(tmp);
+						}
+					}
+				}
+			}
+			DBGPRINT("disc op 0\n");
+
+		}
 		break;
 	case 9: //session invalidated
 		DBGPRINT("disc op 9 session invalid\n");
