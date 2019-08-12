@@ -1010,7 +1010,7 @@ int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			printf(">>getting messages for:%s\n",chan->name);
 			get_messages(c,&chan->msgs,chan->id,100,NULL,FALSE);
 			get_messages(c,&chan->pin_msgs,chan->id,0,NULL,TRUE);
-			printf("%s %s msg count %i\n",g->name,chan->name,chan->msgs.count);
+			printf("%s %s msg count %i pinned count:%i\n",g->name,chan->name,chan->msgs.count,chan->pin_msgs.count);
 			msg_count=chan->msgs.count;
 			for(k=0;k<msg_count;k++){
 				MESSAGE *m=&chan->msgs.m[k];
