@@ -37,7 +37,8 @@ whois
 ":my.server.name 312 test123 test123 my.server.name :I'm too lazy to edit ircd.conf"
 ":my.server.name 317 test123 test123 4 1562449299 :seconds idle, signon time"
 ":my.server.name 318 test123 test123 :End of /WHOIS list."
-
+topic:
+:my.server.name 332 test123 #test_serv1.general :some topic
 */
 
 static read_line(SOCKET s,unsigned char *data,int data_len)
@@ -126,6 +127,7 @@ static CODE_MAP code_map[]={
 	{"NAME_LIST",NAME_LIST},
 	{"END_NAME_LIST",END_NAME_LIST},
 	{"UNKNOWN_CHAN",UNKNOWN_CHAN},
+	{"CHAN_TOPIC",CHAN_TOPIC},
 };
 
 static int get_irc_msg_code(const char *str)
@@ -217,6 +219,16 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 		break;
 	case UNKNOWN_CHAN:
 		__snprintf(tmp,sizeof(tmp),":discord.server 437 %s %s :Unknown channel\r\n",nick,data);
+		break;
+	case CHAN_TOPIC:
+		{
+			char chan[160]={0};
+			const char *ptr=data;
+			const char *topic;
+			get_word(ptr,chan,sizeof(chan));
+			topic=seek_next_word(ptr);
+			__snprintf(tmp,sizeof(tmp),":discord.server 332 nick %s :%s\r\n",chan,topic);
+		}
 		break;
 	default:
 		printf("ERROR:unhandled code:%i\n",code);

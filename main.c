@@ -545,7 +545,11 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 	int res;
 	ssl=&c->ssl;
 	msg_len=(int)strlen(req);
-	ssl_write(ssl,(BYTE*)req,msg_len);
+	res=ssl_write(ssl,(BYTE*)req,msg_len);
+	if(res<0){
+		WSASetLastError(WSAECONNRESET);
+		return result;
+	}
 	//printf("REQ:%s\n---\n",req);
 	res=get_response(c,&resp,&resp_len);
 	if(res){
@@ -772,6 +776,49 @@ int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 
 }
 
+static get_me_user_name(CONNECTION *c,char *uname,int uname_len)
+{
+	int result=FALSE;
+	char *data=0;
+	int data_len=0;
+	append_printf(&data,&data_len,"GET /api/v6/users/@me HTTP/1.1\r\n");
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
+	if(data){
+		char *content=0;
+		int content_len=0;
+		int res;
+		res=do_http_req(c,data,&content,&content_len);
+		if(res){
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONObject){
+				JSON_Object *obj;
+				JSON_Value *val;
+				const char *str;
+				obj=json_value_get_object(root);
+				val=json_object_get_value(obj,"username");
+				str=json_value_get_string(val);
+				if(str){
+					//printf("USERNAME:%s\n",str);
+					strncpy(uname,str,uname_len);
+					if(uname_len){
+						uname[uname_len-1]=0;
+					}
+				}
+			}
+			json_value_free(root);
+		}
+		if(content)
+			free(content);
+		free(data);
+	}
+	return result;
+}
+
 static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,int count,const char *before_id,int pinned)
 {
 	int result=FALSE;
@@ -871,7 +918,11 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 		//printf("---\n");
 		ssl=&c->ssl;
 		msg_len=strlen(data);
-		ssl_write(ssl,(BYTE*)data,msg_len);
+		res=ssl_write(ssl,(BYTE*)data,msg_len);
+		if(res<0){
+			WSASetLastError(WSAECONNRESET);
+			goto ERROR_REQ;
+		}
 		res=get_response(c,&resp,&resp_len);
 		if(res){
 			char *content;
@@ -919,6 +970,7 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 		}else{
 			printf("failed to get response\n");
 		}
+ERROR_REQ:
 		free(data);
 
 	}
@@ -955,6 +1007,7 @@ int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			int k,msg_count;
 			chan=&g->channels.chan[j];
 			remove_all_msg(&chan->msgs);
+			printf(">>getting messages for:%s\n",chan->name);
 			get_messages(c,&chan->msgs,chan->id,100,NULL,FALSE);
 			get_messages(c,&chan->pin_msgs,chan->id,0,NULL,TRUE);
 			printf("%s %s msg count %i\n",g->name,chan->name,chan->msgs.count);
@@ -1020,15 +1073,21 @@ static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
 		//printf("---\n");
 		ssl=&c->ssl;
 		msg_len=strlen(data);
-		ssl_write(ssl,(BYTE*)data,msg_len);
-		res=get_response(c,&resp,&resp_len);
-		if(res){
-			res=get_resp_code(resp,resp_len);
-			if(200!=res){
-				printf("failed to POST message:%*s",resp_len,resp);
+		res=ssl_write(ssl,(BYTE*)data,msg_len);
+		if(res>0){
+			res=get_response(c,&resp,&resp_len);
+			if(res){
+				res=get_resp_code(resp,resp_len);
+				if(200!=res){
+					printf("failed to POST message:%*s",resp_len,resp);
+				}else{
+					result=TRUE;
+				}
+			}else{
+				printf("failed to get response for POST message\n");
 			}
 		}else{
-			printf("failed to get response for POST message\n");
+			WSASetLastError(WSAECONNRESET);
 		}
 	}
 ERROR_POST:
@@ -1283,18 +1342,26 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 	}
 }
 
-static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan)
+static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan,const char *prefix)
 {	
 	int i;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
 		char nick[80]={0};
+		char *msg;
+		int msg_len;
 		if(i>=mlist->count)
 			break;
 		m=&mlist->m[i];
 		__snprintf(nick,sizeof(nick),"%s",m->author);
 		fix_spaced_str(nick);
-		post_msg_to_irc(irc_chan,nick,m->msg);
+		msg_len=strlen(m->msg)+strlen(prefix)+1;
+		msg=calloc(msg_len,1);
+		if(msg){
+			__snprintf(msg,msg_len,"%s%s",prefix,m->msg);
+			post_msg_to_irc(irc_chan,nick,msg);
+			free(msg);
+		}
 	}
 }
 
@@ -1365,8 +1432,21 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				if(name_list[0])
 					push_irc_msg(name_list);
 				free(name_list);
+				name_list=0;
+				name_len=0;
 			}
-			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan);
+			if(count){
+				push_irc_msg(get_irc_msg_str(END_NAME_LIST));
+			}
+			{
+				char *topic=0;
+				int topic_len;
+				append_printf(&topic,&topic_len,"%s %s %s",get_irc_msg_str(CHAN_TOPIC),irc_chan,target_chan->topic);
+				if(topic)
+					push_irc_msg(topic);
+				free(topic);
+			}
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:");
 		}
 	}else{
 		char tmp[80];
@@ -1442,8 +1522,11 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 				tmp=strdup(chan_msg);
 				if(tmp){
 					trim_right(tmp);
-					post_message(c,chan->id,tmp);
+					result=post_message(c,chan->id,tmp);
 					free(tmp);
+				}
+				if(!result){
+					post_msg_to_irc(irc_chan,"ERROR","FAILED TO POST MESSAGE");					
 				}
 				break;
 			}
@@ -1455,7 +1538,7 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 	return result;
 }
 
-static int process_chan_msg(DISCORD_CMD *cmd)
+static int process_chan_msg(DISCORD_CMD *cmd,const char *uname)
 {
 	int result=FALSE;
 	char chan_id[40]={0};
@@ -1479,6 +1562,9 @@ static int process_chan_msg(DISCORD_CMD *cmd)
 		goto EXIT_CHAN_MSG;
 	}
 	strncpy(content,str,content_size);
+	if(0==stricmp(uname,nick)){
+		goto EXIT_CHAN_MSG;
+	}
 	{
 		int i,count;
 		char irc_chan[160]={0};
@@ -1508,7 +1594,7 @@ EXIT_CHAN_MSG:
 	return result;
 }
 
-static int process_requests(CONNECTION *c)
+static int process_requests(CONNECTION *c,const char *uname)
 {
 	int result=FALSE;
 	HANDLE hlist[2]={0};
@@ -1546,7 +1632,7 @@ static int process_requests(CONNECTION *c)
 					process_post_msg(c,&cmd);
 					break;
 				case CMD_CHAN_MSG:
-					process_chan_msg(&cmd);
+					process_chan_msg(&cmd,uname);
 					break;
 				}
 				free_discord_cmd(&cmd);
@@ -1556,7 +1642,21 @@ static int process_requests(CONNECTION *c)
 		}
 		break;
 	case WAIT_TIMEOUT:
-		result=TRUE;
+		{
+			static DWORD tick=0;
+			DWORD delta;
+			if(0==tick){
+				tick=GetTickCount();
+			}
+			delta=GetTickCount()-tick;
+			if(delta>40000){
+				char tmp[40]={0};
+				printf("main thread heartbeat\n");
+				get_me_user_name(c,tmp,sizeof(tmp));
+				tick=GetTickCount();
+			}
+			result=TRUE;
+		}
 		break;
 	default:
 		Sleep(100);
@@ -1579,12 +1679,14 @@ void discord_thread(void *args)
 		DISC_WAIT_CMD,
 	};
 	int state=DISC_CONNECT;
+	char user_name[40]={0};
 	printf("discord_thread started\n");
 	while(1){
 		switch(state){
 		case DISC_CONNECT:
 			{
 				int res;
+				WSASetLastError(0);
 				close_connection(&con);
 				g_gateway[0]=0;
 				res=connect_disc(&con);
@@ -1598,6 +1700,7 @@ void discord_thread(void *args)
 			}
 			break;
 		case DISC_GET_GUILDS:
+			get_me_user_name(&con,user_name,sizeof(user_name));
 			get_guilds(&con,&g_guild_list);
 			state=DISC_GET_CHANNELS;
 			break;
@@ -1623,7 +1726,7 @@ void discord_thread(void *args)
 		case DISC_WAIT_CMD:
 			{
 				int res;
-				res=process_requests(&con);
+				res=process_requests(&con,user_name);
 				if(!res){
 					Sleep(5000);
 					state=DISC_CONNECT;
@@ -1633,6 +1736,15 @@ void discord_thread(void *args)
 		default:
 			Sleep(1000);
 			break;
+		}
+		{
+			int error;
+			error=WSAGetLastError();
+			if(WSAECONNRESET==error){
+				printf("ERROR: socket error detected\n");
+				state=DISC_CONNECT;
+				Sleep(5000);
+			}
 		}
 	}
 }
