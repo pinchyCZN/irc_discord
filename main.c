@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <conio.h>
 #include <WinInet.h>
-
+#include <string.h>
 
 #include "libstring.h"
 #include "parson.h"
@@ -55,6 +55,16 @@ typedef struct{
 }GUILD_LIST;
 
 static GUILD_LIST g_guild_list={0};
+
+static int g_enable_dbgprint=FALSE;
+static void DBGPRINT(const char *fmt,...)
+{
+	va_list ap;
+	if(!g_enable_dbgprint)
+		return;
+	va_start(ap,fmt);
+	vprintf(fmt,ap);
+}
 
 static int add_guild(GUILD_LIST *glist,GUILD *g)
 {
@@ -253,6 +263,7 @@ static int remove_all_channels(CHANNEL_LIST *clist)
 		free(tmp->name);
 		free(tmp->topic);
 		remove_all_msg(&tmp->msgs);
+		remove_all_msg(&tmp->pin_msgs);
 		remove_all_nicks(&tmp->nicks);
 	}
 	if(count>0){
@@ -346,36 +357,45 @@ static int get_content(char *data,int data_len,char **out,int *out_len)
 		}
 	}
 	if(chunked && content_start){
-		char *buf;
-		int buf_len=0x10000;
-		buf=(char*)calloc(buf_len,1);
-		if(buf){
-			SIZE_T delta;
-			char *tmp;
-			int tmp_len;
-			delta=content_start-data;
-			tmp=content_start;
-			tmp_len=data_len-(int)delta;
-			line_count=get_line_count(tmp,tmp_len);
-			for(i=0;i<line_count;i++){
-				int res;
-				res=get_line(tmp,tmp_len,i,buf,buf_len);
-				if(res){
-					if(i&1){
-						get_line_offset(tmp,tmp_len,i,&content_start);
-						*out=content_start;
-						*out_len=content_len;
-						result=TRUE;
-						break;
-					}else{
-						content_len=strtoul(buf,NULL,16);
-					}
-				}else{
-					break;
-				}
+		char *ptr;
+		char *end;
+		char *content=0;
+		int failed=FALSE;
+		content_len=0;
+		ptr=content_start;
+		end=data+data_len;
+		while(1){
+			char *next;
+			int chunk_len;
+			chunk_len=strtoul(ptr,0,16);
+			if(0==chunk_len){
+				break;
 			}
-			free(buf);
+			next=strchr(ptr,'\n');
+			if(0==next){
+				failed=TRUE;
+				break;
+			}
+			next++;
+			if((next+chunk_len)>=end){
+				failed=TRUE;
+				break;
+			}
+			append_printf(&content,&content_len,"%.*s",chunk_len,next);
+			ptr=next+chunk_len+2; //account for CRLF
 		}
+		if((!failed) && content){
+			int len;
+			len=strlen(content);
+			if((content_start+len+1)<=end){
+				strncpy(content_start,content,len);
+				content_start[len]=0;
+				*out=content_start;
+				*out_len=len;
+				result=TRUE;
+			}
+		}
+		free(content);
 	}
 	return result;
 }
@@ -520,9 +540,11 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 					}
 					break;
 				}
-				if(0==n)
+				if(0==n){
 					Sleep(10);
+				}
 			}else{
+				DBGPRINT("ERROR ssl read:%n\n",n);
 				break;
 			}
 			delta=GetTickCount()-tick;
@@ -553,6 +575,7 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 	//printf("REQ:%s\n---\n",req);
 	res=get_response(c,&resp,&resp_len);
 	if(res){
+		DBGPRINT("response:%s\n",resp);
 		res=get_resp_code(resp,resp_len);
 		if(200==res){
 			char *content=0;
@@ -857,23 +880,25 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 				for(i=0;i<count;i++){
 					JSON_Object *msg;
 					const char *id;
-					const char *content;
+					char *content;
 					const char *timestamp;
-					const char *auth;
+					char *auth;
 					const char *auth_id;
 					msg=json_array_get_object(msgs,i);
 					id=json_object_get_string(msg,"id");
-					content=json_object_get_string(msg,"content");
+					content=strdup(json_object_get_string(msg,"content"));
 					timestamp=json_object_get_string(msg,"timestamp");
-					auth=json_object_dotget_string(msg,"author.username");
+					auth=strdup(json_object_dotget_string(msg,"author.username"));
 					auth_id=json_object_dotget_string(msg,"author.id");
+					fix_spaced_str(auth);
+					replace_chars(content,"\t\n\r","  ");
 					if(id && content && timestamp){
 						MESSAGE msg={0};
 						if(0==auth)
 							auth="unknown";
 						if(0==auth_id)
 							auth_id="unknown";
-						msg.author=(char*)auth;
+						msg.author=auth;
 						msg.auth_id=(char*)auth_id;
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
@@ -884,6 +909,8 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,in
 							printf("Failed to add msg %s\n",id);
 						}
 					}
+					free(auth);
+					free(content);
 				}
 			}
 			json_value_free(root);
@@ -1008,6 +1035,7 @@ static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			int k,msg_count;
 			chan=&g->channels.chan[j];
 			remove_all_msg(&chan->msgs);
+			remove_all_msg(&chan->pin_msgs);
 			printf(">>getting messages for:%s\n",chan->name);
 			get_messages(c,&chan->msgs,chan->id,100,NULL,FALSE);
 			get_messages(c,&chan->pin_msgs,chan->id,0,NULL,TRUE);
@@ -1080,7 +1108,7 @@ static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
 			if(res){
 				res=get_resp_code(resp,resp_len);
 				if(200!=res){
-					printf("failed to POST message:%*s",resp_len,resp);
+					printf("failed to POST message:%.*s",resp_len,resp);
 				}else{
 					result=TRUE;
 				}
@@ -1338,7 +1366,7 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 			break;
 		}
 		//CHAN_MSG chan,nick,msg
-		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
+		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %.*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
 		push_irc_msg(irc_msg);
 	}
 }
@@ -1348,14 +1376,13 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 	int i;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
-		char nick[80]={0};
+		const char *nick;
 		char *msg;
 		int msg_len;
 		if(i>=mlist->count)
 			break;
 		m=&mlist->m[i];
-		__snprintf(nick,sizeof(nick),"%s",m->author);
-		fix_spaced_str(nick);
+		nick=m->author;
 		msg_len=strlen(m->msg)+strlen(prefix)+1;
 		msg=calloc(msg_len,1);
 		if(msg){
@@ -1596,6 +1623,38 @@ EXIT_CHAN_MSG:
 	return result;
 }
 
+static void do_discord_test(CONNECTION *conn)
+{
+	int i,count;
+	count=g_guild_list.count;
+	printf(">>>doing discord test<<<\n");
+	for(i=0;i<count;i++){
+		GUILD *g;
+		g=&g_guild_list.guild[i];
+		//#Turok_Speedrunning.general
+		if(strstr(g->name,"Turok_Speedrunning")){
+			int j;
+			for(j=0;j<g->channels.count;j++){
+				CHANNEL *c;
+				c=&g->channels.chan[j];
+				if(strstr(c->name,"general")){
+					const char *chan_id=c->id;
+					MESSAGE_LIST mlist={0};
+					printf(">>>getting messages<<<\n");
+					g_enable_dbgprint=TRUE;
+					get_messages(conn,&mlist,chan_id,100,NULL,0);
+					g_enable_dbgprint=FALSE;
+					printf("count:%i\n",mlist.count);
+					dump_message_list(&mlist,"==");
+					remove_all_msg(&mlist);
+					break;
+				}
+			}
+			break;
+		}
+	}
+}
+
 static int process_requests(CONNECTION *c,const char *uname)
 {
 	int result=FALSE;
@@ -1635,6 +1694,9 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_CHAN_MSG:
 					process_chan_msg(&cmd,uname);
+					break;
+				case CMD_TEST:
+					do_discord_test(c);
 					break;
 				}
 				free_discord_cmd(&cmd);
@@ -1753,6 +1815,52 @@ static void discord_thread(void *args)
 
 static void test_shit()
 {
+	printf("adding discord test command\n");
+	add_discord_cmd(CMD_TEST,"");
+}
+
+static test_get_content()
+{
+	char *c1,*c2,*c3;
+	int i,j;
+	char *list[3];
+	char *data=0;
+	int dlen=0;
+	c1=calloc(1000,1);
+	c2=calloc(1000,1);
+	c3=calloc(1000,1);
+	list[0]=c1;
+	list[1]=c2;
+	list[2]=c3;
+	for(j=0;j<3;j++){
+		char *tmp=list[j];
+		for(i=0;i<8;i++){
+			char a='D';
+			if(0==i)
+				a='>';
+			if(7==i)
+				a='<';
+			tmp[i]=a;
+		}
+	}
+	append_printf(&data,&dlen,"Blah: sdfadsf\r\n");
+	append_printf(&data,&dlen,"Blah: sdsdfgsdf\r\n");
+	append_printf(&data,&dlen,"Transfer-Encoding: chunked\r\n");
+	append_printf(&data,&dlen,"Blah: sdcvbncvbn\r\n");
+	append_printf(&data,&dlen,"\r\n");
+	append_printf(&data,&dlen,"%x\r\n",strlen(c1));
+	append_printf(&data,&dlen,"%s\r\n",c1);
+	append_printf(&data,&dlen,"%x\r\n",strlen(c2));
+	append_printf(&data,&dlen,"%s\r\n",c3);
+	append_printf(&data,&dlen,"%x\r\n",strlen(c3));
+	append_printf(&data,&dlen,"%s\r\n",c3);
+	append_printf(&data,&dlen,"%x\r\n",0);
+	char *out=0;
+	int out_len;
+	get_content(data,dlen,&out,&out_len);
+	printf("|%.*s|\n",out_len,out);
+	do_wait();
+	exit(0);
 
 }
 
@@ -1770,6 +1878,7 @@ static int do_wait()
 
 int main(int argc,char **argv)
 {
+	//test_get_content();
 	init_mutex();
 	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
 	_beginthread(&gateway_thread,0,NULL);
