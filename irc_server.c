@@ -227,7 +227,8 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 			const char *topic;
 			get_word(ptr,chan,sizeof(chan));
 			topic=seek_next_word(ptr);
-			__snprintf(tmp,sizeof(tmp),":discord.server 332 nick %s :%s\r\n",chan,topic);
+			if(topic && topic[0]!=0)
+				__snprintf(tmp,sizeof(tmp),":discord.server 332 nick %s :%s\r\n",chan,topic);
 		}
 		break;
 	default:
@@ -385,8 +386,15 @@ static int handle_connection(SOCKET s)
 							cmd_valid=TRUE;
 							add_discord_cmd(CMD_POST_MSG,tmp);
 						}
+					}else if(startswithi(cmd,"GETMSG")){
+						const char *tmp;
+						tmp=seek_next_word(line);
+						if(0==tmp)
+							tmp="";
+						cmd_valid=TRUE;
+						add_discord_cmd(CMD_GET_MSGS,tmp);
 					}
-					if(!cmd_valid){
+			if(!cmd_valid){
 						_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
 						net_send_str(s,line);
 					}

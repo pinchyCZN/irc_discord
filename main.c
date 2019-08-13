@@ -290,6 +290,56 @@ static int remove_all_guilds(GUILD_LIST *glist)
 	return TRUE;
 }
 
+static void str_to_64bit(const char *str,__int64 *val)
+{
+	int index=0;
+	__int64 tmp=0;
+	__int64 *ptr64;
+	int len;
+	len=strlen(str);
+	if(len<26)
+		return;
+	SYSTEMTIME stime={0};
+	FILETIME ftime={0};
+	stime.wYear=atoi(str);
+	str+=5;
+	stime.wMonth=atoi(str);
+	str+=3;
+	stime.wDay=atoi(str);
+	str+=3;
+	stime.wHour=atoi(str);
+	str+=3;
+	stime.wMinute=atoi(str);
+	str+=3;
+	stime.wSecond=atoi(str);
+	str+=3;
+	stime.wMilliseconds=atoi(str)/1000;
+	SystemTimeToFileTime(&stime,&ftime);
+	ptr64=(__int64*)&ftime;
+	tmp=*ptr64;
+	*val=tmp;
+}
+static int compare_message(const void *arg1,const void *arg2)
+{
+	int result;
+	__int64 val1,val2;
+	MESSAGE *a,*b;
+	a=(MESSAGE*)arg1;
+	b=(MESSAGE*)arg2;
+	str_to_64bit(a->timestamp,&val1);
+	str_to_64bit(b->timestamp,&val2);
+	result=1;
+	if(val1<val2)
+		result=-1; //-1 is first argument is less than the second
+	else if(val1==val2)
+		result=0;
+	return result;
+}
+static void sort_messages(MESSAGE_LIST *mlist)
+{
+	qsort(mlist->m,mlist->count,sizeof(MESSAGE),&compare_message);
+}
+
 static int is_chunked(const char *str)
 {
 	if(strstri(str,"chunked")){
@@ -1131,7 +1181,7 @@ static int dump_message_list(MESSAGE_LIST *mlist,const char *prefix)
 	for(i=0;i<count;i++){
 		MESSAGE *msg;
 		msg=&mlist->m[i];
-		printf("%s<%s> %s %s\n",prefix,msg->author,msg->timestamp,msg->msg);
+		printf("%s<%s> %s %s %s\n",prefix,msg->author,msg->timestamp,msg->id,msg->msg);
 	}
 	return 0;
 }
@@ -1149,7 +1199,6 @@ static int dump_guild_stuff(GUILD_LIST *glist)
 			chan=&g->channels.chan[j];
 			printf(" %s %s %s\n",chan->name,chan->topic,chan->id);
 			dump_message_list(&chan->msgs,"  :");
-
 		}
 	}
 	return 0;
@@ -1641,9 +1690,8 @@ static void do_discord_test(CONNECTION *conn)
 					const char *chan_id=c->id;
 					MESSAGE_LIST mlist={0};
 					printf(">>>getting messages<<<\n");
-					g_enable_dbgprint=TRUE;
 					get_messages(conn,&mlist,chan_id,100,NULL,0);
-					g_enable_dbgprint=FALSE;
+					sort_messages(&mlist);
 					printf("count:%i\n",mlist.count);
 					dump_message_list(&mlist,"==");
 					remove_all_msg(&mlist);
@@ -1653,6 +1701,12 @@ static void do_discord_test(CONNECTION *conn)
 			break;
 		}
 	}
+}
+
+static void process_get_msgs(DISCORD_CMD *cmd)
+{
+	char chan_name[160]={0};
+	//char sub_cmd
 }
 
 static int process_requests(CONNECTION *c,const char *uname)
@@ -1688,6 +1742,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 					process_list_chan(&cmd);
 					break;
 				case CMD_GET_MSGS:
+					process_get_msgs(&cmd);
 					break;
 				case CMD_POST_MSG:
 					process_post_msg(c,&cmd);
@@ -1819,50 +1874,6 @@ static void test_shit()
 	add_discord_cmd(CMD_TEST,"");
 }
 
-static test_get_content()
-{
-	char *c1,*c2,*c3;
-	int i,j;
-	char *list[3];
-	char *data=0;
-	int dlen=0;
-	c1=calloc(1000,1);
-	c2=calloc(1000,1);
-	c3=calloc(1000,1);
-	list[0]=c1;
-	list[1]=c2;
-	list[2]=c3;
-	for(j=0;j<3;j++){
-		char *tmp=list[j];
-		for(i=0;i<8;i++){
-			char a='D';
-			if(0==i)
-				a='>';
-			if(7==i)
-				a='<';
-			tmp[i]=a;
-		}
-	}
-	append_printf(&data,&dlen,"Blah: sdfadsf\r\n");
-	append_printf(&data,&dlen,"Blah: sdsdfgsdf\r\n");
-	append_printf(&data,&dlen,"Transfer-Encoding: chunked\r\n");
-	append_printf(&data,&dlen,"Blah: sdcvbncvbn\r\n");
-	append_printf(&data,&dlen,"\r\n");
-	append_printf(&data,&dlen,"%x\r\n",strlen(c1));
-	append_printf(&data,&dlen,"%s\r\n",c1);
-	append_printf(&data,&dlen,"%x\r\n",strlen(c2));
-	append_printf(&data,&dlen,"%s\r\n",c3);
-	append_printf(&data,&dlen,"%x\r\n",strlen(c3));
-	append_printf(&data,&dlen,"%s\r\n",c3);
-	append_printf(&data,&dlen,"%x\r\n",0);
-	char *out=0;
-	int out_len;
-	get_content(data,dlen,&out,&out_len);
-	printf("|%.*s|\n",out_len,out);
-	do_wait();
-	exit(0);
-
-}
 
 static int do_wait()
 {
@@ -1876,9 +1887,16 @@ static int do_wait()
 	return 0;
 }
 
+static int test_func()
+{
+	__int64 val;
+	str_to_64bit("2019-08-12T19:24:48.725000+00:00",&val);
+	do_wait();
+	exit(0);
+}
+
 int main(int argc,char **argv)
 {
-	//test_get_content();
 	init_mutex();
 	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
 	_beginthread(&gateway_thread,0,NULL);
