@@ -455,6 +455,8 @@ int __snprintf(char *buf,int buf_len,const char *fmt,...)
 void fix_spaced_str(char *str)
 {
 	int index=0;
+	if(0==str)
+		return;
 	while(1){
 		unsigned char a=str[index];
 		if(0==a){
@@ -464,5 +466,35 @@ void fix_spaced_str(char *str)
 			str[index]='_';
 		}
 		index++;
+	}
+}
+
+void replace_chars(char *str,const char *list,const char *rlist)
+{
+	int i,list_len,rlist_len=0;
+	if(0==str || 0==list)
+		return;
+	list_len=strlen(list);
+	if(rlist){
+		rlist_len=strlen(rlist);
+	}
+	for(i=0;i<list_len;i++){
+		unsigned char a,r=0;
+		int j,str_len;
+		int index=0;
+		a=list[i];
+		str_len=strlen(str);
+		if(i<rlist_len){
+			r=rlist[i];
+		}
+		for(j=0;j<=str_len;j++){
+			unsigned char b;
+			b=str[j];
+			if(a!=b){
+				str[index++]=b;
+			}else if(r>0 && r<=0x7F){
+				str[index++]=r;
+			}
+		}
 	}
 }

@@ -14,7 +14,7 @@ enum{
 	GW_WAIT,
 };
 
-void DBGPRINT(const char *fmt,...)
+static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
 	if(g_disable_dbgprint)
@@ -29,7 +29,7 @@ typedef struct{
 	int len;
 	BYTE *data;
 }WS_PAYLOAD;
-int get_header_size(BYTE *data)
+static int get_header_size(BYTE *data)
 {
 	int is_final;
 	int is_masked;
@@ -41,7 +41,7 @@ int get_header_size(BYTE *data)
 	header_size = 2 + (first_byte == 0x7E ? 2 : 0) + (first_byte == 0x7F ? 8 : 0) + (is_masked ? 4 : 0);
 	return header_size;
 }
-int get_payload_size(BYTE *data)
+static int get_payload_size(BYTE *data)
 {
 	int result=0;
 	int plen;
@@ -75,7 +75,7 @@ int get_payload_size(BYTE *data)
 }
 
 
-int login_gateway(CONNECTION *c)
+static int login_gateway(CONNECTION *c)
 {
 	int result=FALSE;
 	ssl_context *ssl;
@@ -159,7 +159,7 @@ int login_gateway(CONNECTION *c)
 
 
 
-int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
+static int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 {
 	int result=FALSE;
 	BYTE header[32]={0};
@@ -246,7 +246,7 @@ int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 	return result;
 }
 
-int append_data(BYTE **data,int *data_len,BYTE *append,int append_len)
+static int append_data(BYTE **data,int *data_len,BYTE *append,int append_len)
 {
 	int result=FALSE;
 	BYTE *tmp;
@@ -268,7 +268,7 @@ int append_data(BYTE **data,int *data_len,BYTE *append,int append_len)
 }
 
 
-int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
+static int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
 {
 	int result=FALSE;
 	BYTE hdr[16]={0};
@@ -296,7 +296,7 @@ int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
 	return result;
 }
 
-int send_identify(ssl_context *ssl)
+static int send_identify(ssl_context *ssl)
 {
 	int result=FALSE;
 	char *buf=0;
@@ -317,7 +317,7 @@ int send_identify(ssl_context *ssl)
 	free(buf);
 	return result;
 }
-int send_heartbeat(ssl_context *ssl,int seq_num)
+static int send_heartbeat(ssl_context *ssl,int seq_num)
 {
 	int result=FALSE;
 	char *buf=0;
@@ -337,7 +337,7 @@ int send_heartbeat(ssl_context *ssl,int seq_num)
 	return result;
 }
 
-int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
+static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 {
 	int result=FALSE;
 	int opcode=-1;
@@ -429,14 +429,14 @@ int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 	return result;
 }
 
-int send_pong(ssl_context *ssl,BYTE *data,int data_len)
+static int send_pong(ssl_context *ssl,BYTE *data,int data_len)
 {
 	int result=FALSE;
 	send_ws_payload(ssl,10,data,data_len);
 	return result;
 }
 
-int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,int *error_count,int *seq_num)
+static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,int *error_count,int *seq_num)
 {
 	int result=FALSE;
 	int res;

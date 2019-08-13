@@ -72,7 +72,7 @@ static int net_send_str(SOCKET s,const char *str)
 	slen=strlen(str);
 	return net_send(&s,str,slen);
 }
-int send_motd(SOCKET s,char *nick)
+static int send_motd(SOCKET s,char *nick)
 {
 	int result=TRUE;
 	char tmp[80]={0};
@@ -311,7 +311,7 @@ static int data_avail(SOCKET s,int timeout,int *has_error)
 	return result;
 }
 
-int handle_connection(SOCKET s)
+static int handle_connection(SOCKET s)
 {
 	static char line[2048];
 	char nick[80]={0};

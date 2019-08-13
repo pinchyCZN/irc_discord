@@ -279,7 +279,7 @@ static int remove_all_guilds(GUILD_LIST *glist)
 	return TRUE;
 }
 
-int is_chunked(const char *str)
+static int is_chunked(const char *str)
 {
 	if(strstri(str,"chunked")){
 		return TRUE;
@@ -380,7 +380,7 @@ static int get_content(char *data,int data_len,char **out,int *out_len)
 	return result;
 }
 
-int is_resp_complete(char *data,int data_len)
+static int is_resp_complete(char *data,int data_len)
 {
 	int result=FALSE;
 	int i,lines;
@@ -582,7 +582,7 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 	return result;
 }
 
-int connect_disc(CONNECTION *c)
+static int connect_disc(CONNECTION *c)
 {
 	int result=FALSE;
 	int res;
@@ -664,7 +664,7 @@ int connect_disc(CONNECTION *c)
 }
 
 
-int get_gateway(CONNECTION *c)
+static int get_gateway(CONNECTION *c)
 {
 	int result=FALSE;
 	char *data=0;
@@ -720,7 +720,7 @@ int get_gateway(CONNECTION *c)
 	return result;
 }
 
-int get_guilds(CONNECTION *c,GUILD_LIST *glist)
+static int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 {
 	int result=FALSE;
 	char *data=0;
@@ -947,6 +947,7 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 							id=strdup(json_object_get_string(chan,"id"));
 							name=strdup(json_object_get_string(chan,"name"));
 							topic=strdup(json_object_get_string(chan,"topic"));
+							replace_chars(topic,"\t\n\r","  ");
 							if(id && name){
 								CHANNEL chan={0};
 								chan.id=id;
@@ -976,7 +977,7 @@ ERROR_REQ:
 	}
 	return result;
 }
-int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
+static int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
 {
 	int result=TRUE;
 	int i,count;
@@ -993,7 +994,7 @@ int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
 	}
 	return result;
 }
-int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
+static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 {
 	int result=FALSE;
 	int i,count;
@@ -1135,7 +1136,7 @@ typedef struct{
 	void *next;
 	void *prev;
 }DISCORD_CMD;
-DISCORD_CMD *g_cmd_list=0;
+static DISCORD_CMD *g_cmd_list=0;
 
 static void init_mutex()
 {
@@ -1184,7 +1185,7 @@ int add_discord_cmd(int cmd,const char *cmd_data)
 	return result;
 }
 
-int pop_discord_cmd(DISCORD_CMD *cmd)
+static int pop_discord_cmd(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
 	enter_mutex();
@@ -1442,8 +1443,9 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				char *topic=0;
 				int topic_len;
 				append_printf(&topic,&topic_len,"%s %s %s",get_irc_msg_str(CHAN_TOPIC),irc_chan,target_chan->topic);
-				if(topic)
+				if(topic){
 					push_irc_msg(topic);
+				}
 				free(topic);
 			}
 			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:");
@@ -1667,7 +1669,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 }
 
 
-void discord_thread(void *args)
+static void discord_thread(void *args)
 {
 	CONNECTION con={0};
 	enum{
@@ -1749,13 +1751,19 @@ void discord_thread(void *args)
 	}
 }
 
-int do_wait()
+static void test_shit()
+{
+
+}
+
+static int do_wait()
 {
 	while(1){
 		int key=getch();
 		if(0x1b==key){
 			exit(0);
 		}
+		test_shit();
 	}
 	return 0;
 }
@@ -1764,7 +1772,6 @@ int main(int argc,char **argv)
 {
 	init_mutex();
 	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
-
 	_beginthread(&gateway_thread,0,NULL);
 	_beginthread(&discord_thread,0,NULL);
 	_beginthread(&irc_thread,0,NULL);

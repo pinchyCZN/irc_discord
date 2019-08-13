@@ -35,3 +35,5 @@ int get_word(const char *str,char *out,int out_size);
 int __snprintf(char *buf,int buf_len,const char *fmt,...);
 
 void fix_spaced_str(char *str);
+
+void replace_chars(char *str,const char *list,const char *rlist);
