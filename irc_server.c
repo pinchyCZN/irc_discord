@@ -41,7 +41,7 @@ topic:
 :my.server.name 332 test123 #test_serv1.general :some topic
 */
 
-static read_line(SOCKET s,unsigned char *data,int data_len)
+static int read_line(SOCKET s,unsigned char *data,int data_len)
 {
 	int index=0;
 	while(1){
@@ -249,6 +249,9 @@ int push_irc_msg(const char *str)
 	int count;
 	int index;
 	char **tmp_list;
+	if(0==str){
+		return result;
+	}
 	EnterCriticalSection(&irc_mutex);
 	count=irc_msg_count;
 	index=irc_msg_count;
@@ -393,8 +396,11 @@ static int handle_connection(SOCKET s)
 							tmp="";
 						cmd_valid=TRUE;
 						add_discord_cmd(CMD_GET_MSGS,tmp);
+					}else if(startswithi(cmd,"QUIT")){
+						cmd_valid=TRUE;
+						state=99;
 					}
-			if(!cmd_valid){
+					if(!cmd_valid){
 						_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
 						net_send_str(s,line);
 					}

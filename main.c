@@ -292,28 +292,42 @@ static int remove_all_guilds(GUILD_LIST *glist)
 
 static void str_to_64bit(const char *str,__int64 *val)
 {
-	int index=0;
+	typedef struct{
+		WORD *data;
+		int len;
+		int divisor;
+	}TIME_MAP;
 	__int64 tmp=0;
 	__int64 *ptr64;
 	int len;
+	SYSTEMTIME stime={0};
+	FILETIME ftime={0};
+	TIME_MAP map[7]={
+		{&stime.wYear,5},
+		{&stime.wMonth,3},
+		{&stime.wDay,3},
+		{&stime.wHour,3},
+		{&stime.wMinute,3},
+		{&stime.wSecond,3},
+		{&stime.wMilliseconds,-1},
+	};
+	int i,count;
+	const char *ptr;
 	len=strlen(str);
 	if(len<26)
 		return;
-	SYSTEMTIME stime={0};
-	FILETIME ftime={0};
-	stime.wYear=atoi(str);
-	str+=5;
-	stime.wMonth=atoi(str);
-	str+=3;
-	stime.wDay=atoi(str);
-	str+=3;
-	stime.wHour=atoi(str);
-	str+=3;
-	stime.wMinute=atoi(str);
-	str+=3;
-	stime.wSecond=atoi(str);
-	str+=3;
-	stime.wMilliseconds=atoi(str)/1000;
+	count=_countof(map);
+	ptr=str;
+	for(i=0;i<count;i++){
+		TIME_MAP *tm;
+		int val;
+		tm=&map[i];
+		val=atoi(ptr);
+		if(tm->len<0)
+			val/=1000;
+		tm->data[0]=val;
+		ptr+=tm->len;
+	}
 	SystemTimeToFileTime(&stime,&ftime);
 	ptr64=(__int64*)&ftime;
 	tmp=*ptr64;
@@ -1257,6 +1271,8 @@ int add_discord_cmd(int cmd,const char *cmd_data)
 			}
 			leave_mutex();
 			SetEvent(g_event);
+		}else{
+			free(tmp);
 		}
 	}
 	return result;
@@ -1513,15 +1529,17 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				name_len=0;
 			}
 			if(count){
-				push_irc_msg(get_irc_msg_str(END_NAME_LIST));
+				char *tmp=0;
+				int tmp_len=0;
+				append_printf(&tmp,&tmp_len,"%s %s",get_irc_msg_str(END_NAME_LIST),irc_chan);
+				push_irc_msg(tmp);
+				free(tmp);
 			}
 			{
 				char *topic=0;
 				int topic_len;
 				append_printf(&topic,&topic_len,"%s %s %s",get_irc_msg_str(CHAN_TOPIC),irc_chan,target_chan->topic);
-				if(topic){
-					push_irc_msg(topic);
-				}
+				push_irc_msg(topic);
 				free(topic);
 			}
 			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:");
@@ -1706,7 +1724,16 @@ static void do_discord_test(CONNECTION *conn)
 static void process_get_msgs(DISCORD_CMD *cmd)
 {
 	char chan_name[160]={0};
-	//char sub_cmd
+	char *str;
+	//around=1,before=2,after=3,limit params from msg ID
+	int pos=0;
+	int limit=100;
+	str=cmd->data;
+	get_word(str,chan_name,sizeof(chan_name));
+	str=seek_next_word(str);
+	if(str){
+
+	}
 }
 
 static int process_requests(CONNECTION *c,const char *uname)
