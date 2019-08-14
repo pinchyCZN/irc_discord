@@ -498,3 +498,67 @@ void replace_chars(char *str,const char *list,const char *rlist)
 		}
 	}
 }
+
+const char *seek_next_digit(const char *str)
+{
+	const char *result=0;
+	int index=0;
+	if(0==str)
+		return result;
+	while(1){
+		unsigned char a=str[index];
+		if(0==a)
+			break;
+		if(isspace(a))
+			break;
+		if(isdigit(a)){
+			result=str+index;
+			break;
+		}
+		index++;
+	}
+	return result;
+}
+
+void time_str_to_ftime(const char *str,__int64 *val)
+{
+	SYSTEMTIME time={0};
+	FILETIME ftime={0};
+	__int64 tmp=0;
+	__int64 *ptr64;
+	int i,count;
+	const char *ptr=str;
+	WORD *dst[7]={
+		&time.wYear,
+		&time.wMonth,
+		&time.wDay,
+		&time.wHour,
+		&time.wMinute,
+		&time.wSecond,
+		&time.wMilliseconds,
+	};
+	if(0==str)
+		return;
+	if(0==val)
+		return;
+	count=_countof(dst);
+	for(i=0;i<count;i++){
+		WORD *w;
+		char *end=0;
+		int val;
+		w=dst[i];
+		val=strtoul(ptr,&end,10);
+		if(val>0xFFFF)
+			val/=1000;
+		w[0]=(WORD)val;
+		if(0==end)
+			break;
+		ptr=seek_next_digit(end);
+		if(0==ptr)
+			break;
+	}
+	SystemTimeToFileTime(&time,&ftime);
+	ptr64=(__int64*)&ftime;
+	tmp=*ptr64;
+	*val=tmp;
+}

@@ -23,6 +23,7 @@ typedef struct{
 	char *author;
 	char *auth_id;
 	char *timestamp;
+	__int64 ftime;
 }MESSAGE;
 typedef struct{
 	MESSAGE *m;
@@ -204,6 +205,7 @@ static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
 		tmp->id=id;
 		tmp->msg=content;
 		tmp->timestamp=timestamp;
+		time_str_to_ftime(timestamp,&tmp->ftime);
 		mlist->m=ptr;
 		mlist->count=count;
 		result=TRUE;
@@ -215,6 +217,22 @@ ERROR_ADD_MSG:
 		free(id);
 		free(content);
 		free(timestamp);
+	}
+	return result;
+}
+
+static int have_msg(MESSAGE_LIST *mlist,MESSAGE *msg)
+{
+	int result=FALSE;
+	int i,count;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m;
+		m=&mlist->m[i];
+		if(0==stricmp(m->id,msg->id)){
+			result=TRUE;
+			break;
+		}
 	}
 	return result;
 }
@@ -290,49 +308,6 @@ static int remove_all_guilds(GUILD_LIST *glist)
 	return TRUE;
 }
 
-static void str_to_64bit(const char *str,__int64 *val)
-{
-	typedef struct{
-		WORD *data;
-		int len;
-		int divisor;
-	}TIME_MAP;
-	__int64 tmp=0;
-	__int64 *ptr64;
-	int len;
-	SYSTEMTIME stime={0};
-	FILETIME ftime={0};
-	TIME_MAP map[7]={
-		{&stime.wYear,5},
-		{&stime.wMonth,3},
-		{&stime.wDay,3},
-		{&stime.wHour,3},
-		{&stime.wMinute,3},
-		{&stime.wSecond,3},
-		{&stime.wMilliseconds,-1},
-	};
-	int i,count;
-	const char *ptr;
-	len=strlen(str);
-	if(len<26)
-		return;
-	count=_countof(map);
-	ptr=str;
-	for(i=0;i<count;i++){
-		TIME_MAP *tm;
-		int val;
-		tm=&map[i];
-		val=atoi(ptr);
-		if(tm->len<0)
-			val/=1000;
-		tm->data[0]=val;
-		ptr+=tm->len;
-	}
-	SystemTimeToFileTime(&stime,&ftime);
-	ptr64=(__int64*)&ftime;
-	tmp=*ptr64;
-	*val=tmp;
-}
 static int compare_message(const void *arg1,const void *arg2)
 {
 	int result;
@@ -340,20 +315,48 @@ static int compare_message(const void *arg1,const void *arg2)
 	MESSAGE *a,*b;
 	a=(MESSAGE*)arg1;
 	b=(MESSAGE*)arg2;
-	str_to_64bit(a->timestamp,&val1);
-	str_to_64bit(b->timestamp,&val2);
+	val1=a->ftime;
+	val2=b->ftime;
 	result=1;
-	if(val1<val2)
+	if(val1 < val2)
 		result=-1; //-1 is first argument is less than the second
 	else if(val1==val2)
 		result=0;
 	return result;
 }
+// sort from oldest to newest
 static void sort_messages(MESSAGE_LIST *mlist)
 {
 	qsort(mlist->m,mlist->count,sizeof(MESSAGE),&compare_message);
 }
 
+static int get_channel_obj(const char *guild,const char *channel,CHANNEL **chan_obj)
+{
+	int result=FALSE;
+	int i,count;
+	count=g_guild_list.count;
+	for(i=0;i<count;i++){
+		GUILD *g;
+		g=&g_guild_list.guild[i];
+		if(0==stricmp(g->name,guild)){
+			int j,chan_count;
+			g=&g_guild_list.guild[i];
+			chan_count=g->channels.count;
+			for(j=0;j<chan_count;j++){
+				CHANNEL *c;
+				c=&g->channels.chan[j];
+				if(0==stricmp(c->name,channel)){
+					*chan_obj=c;
+					result=TRUE;
+					break;
+				}
+			}
+		}
+		if(result)
+			break;
+	}
+	return result;
+}
 static int is_chunked(const char *str)
 {
 	if(strstri(str,"chunked")){
@@ -453,7 +456,8 @@ static int get_content(char *data,int data_len,char **out,int *out_len)
 			len=strlen(content);
 			if((content_start+len+1)<=end){
 				strncpy(content_start,content,len);
-				content_start[len]=0;
+				if(len>0)
+					content_start[len]=0;
 				*out=content_start;
 				*out_len=len;
 				result=TRUE;
@@ -636,7 +640,6 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 		WSASetLastError(WSAECONNRESET);
 		return result;
 	}
-	//printf("REQ:%s\n---\n",req);
 	res=get_response(c,&resp,&resp_len);
 	if(res){
 		DBGPRINT("response:%s\n",resp);
@@ -658,7 +661,8 @@ static do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_c
 				}
 			}
 		}else{
-			printf("RESP:\n%.*s\n",resp_len,resp);
+			printf("REQ:\n%s|\n---\n",req);
+			printf("RESP:\n%.*s|\n---\n",resp_len,resp);
 		}
 	}else{
 		printf("failed to get response\n");
@@ -906,20 +910,27 @@ static get_me_user_name(CONNECTION *c,char *uname,int uname_len)
 	return result;
 }
 
-static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,int count,const char *before_id,int pinned)
+static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,unsigned int limit,int position,const char *pos_id,int pinned)
 {
 	int result=FALSE;
 	char *data=0;
 	int data_len=0;
-	if(count>100)
-		count=100;
+	if(limit>100)
+		limit=100;
+	else if(0==limit)
+		limit=1;
 	if(pinned){
 		append_printf(&data,&data_len,"GET /api/v6/channels/%s/pins",chan_id);
 	}else{
 		append_printf(&data,&data_len,"GET /api/v6/channels/%s/messages",chan_id);
-		append_printf(&data,&data_len,"?limit=%u",count);
-		if(before_id && before_id[0]!=0){
-			append_printf(&data,&data_len,"&before=",before_id);
+		append_printf(&data,&data_len,"?limit=%u",limit);
+		if(pos_id && pos_id[0]!=0){
+			if(position<0)
+				append_printf(&data,&data_len,"&before=%s",pos_id);
+			else if(0==position)
+				append_printf(&data,&data_len,"&around=%s",pos_id);
+			else
+				append_printf(&data,&data_len,"&after=%s",pos_id);
 		}
 	}
 	append_printf(&data,&data_len," HTTP/1.1\r\n");
@@ -1101,8 +1112,8 @@ static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			remove_all_msg(&chan->msgs);
 			remove_all_msg(&chan->pin_msgs);
 			printf(">>getting messages for:%s\n",chan->name);
-			get_messages(c,&chan->msgs,chan->id,100,NULL,FALSE);
-			get_messages(c,&chan->pin_msgs,chan->id,0,NULL,TRUE);
+			get_messages(c,&chan->msgs,chan->id,100,0,NULL,FALSE);
+			get_messages(c,&chan->pin_msgs,chan->id,0,0,NULL,TRUE);
 			printf("%s %s msg count %i pinned count:%i\n",g->name,chan->name,chan->msgs.count,chan->pin_msgs.count);
 			msg_count=chan->msgs.count;
 			for(k=0;k<msg_count;k++){
@@ -1436,25 +1447,24 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 	}
 }
 
-static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan,const char *prefix)
+static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan,const char *prefix,int flags)
 {	
 	int i;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
 		const char *nick;
-		char *msg;
-		int msg_len;
+		char *msg=0;
+		int msg_len=0;
 		if(i>=mlist->count)
 			break;
 		m=&mlist->m[i];
 		nick=m->author;
-		msg_len=strlen(m->msg)+strlen(prefix)+1;
-		msg=calloc(msg_len,1);
-		if(msg){
-			__snprintf(msg,msg_len,"%s%s",prefix,m->msg);
-			post_msg_to_irc(irc_chan,nick,msg);
-			free(msg);
-		}
+		if(flags)
+			append_printf(&msg,&msg_len,"[%.19s] %s",m->timestamp,m->msg);
+		else
+			append_printf(&msg,&msg_len,"%s%s",prefix,m->msg);
+		post_msg_to_irc(irc_chan,nick,msg);
+		free(msg);
 	}
 }
 
@@ -1542,7 +1552,7 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				push_irc_msg(topic);
 				free(topic);
 			}
-			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:");
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED: ",0);
 		}
 	}else{
 		char tmp[80];
@@ -1708,7 +1718,7 @@ static void do_discord_test(CONNECTION *conn)
 					const char *chan_id=c->id;
 					MESSAGE_LIST mlist={0};
 					printf(">>>getting messages<<<\n");
-					get_messages(conn,&mlist,chan_id,100,NULL,0);
+					get_messages(conn,&mlist,chan_id,100,0,NULL,0);
 					sort_messages(&mlist);
 					printf("count:%i\n",mlist.count);
 					dump_message_list(&mlist,"==");
@@ -1721,18 +1731,124 @@ static void do_discord_test(CONNECTION *conn)
 	}
 }
 
-static void process_get_msgs(DISCORD_CMD *cmd)
+static int get_channel_obj_from_irc_chan(const char *irc_chan,CHANNEL **chan_obj)
+{
+	int result=FALSE;
+	char guild[80]={0};
+	char chan[80]={0};
+	result=extract_guild_chan(irc_chan,guild,sizeof(guild),chan,sizeof(chan));
+	if(result){
+		result=get_channel_obj(guild,chan,chan_obj);
+	}
+	return result;
+}
+//get the message that is closest less than given time
+static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,const char **msg_id)
+{
+	int result=FALSE;
+	int i,count;
+	int found=-1;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m=&mlist->m[i];
+		if(ftime > m->ftime){
+			found=i;
+		}else{
+			break;
+		}
+	}
+	if(found>=0){
+		*msg_id=mlist->m[found].id;
+		result=TRUE;
+	}
+	return result;
+}
+
+static int binsearch_compare_message(const void *arg1,const void *arg2)
+{
+	int result;
+	MESSAGE *a,*b;
+	a=(MESSAGE*)arg1;
+	b=(MESSAGE*)arg2;
+	result=1;
+	if(a->ftime < b->ftime)
+		result=-1;
+	else if(a->ftime == b->ftime){
+		//int res;
+		//res=strcmpi(a->id,b->id);
+		//result=res;
+		result=0;
+	}
+	return result;
+}
+
+static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 {
 	char chan_name[160]={0};
-	char *str;
+	const char *str;
 	//around=1,before=2,after=3,limit params from msg ID
-	int pos=0;
+	int position=0;
 	int limit=100;
+	CHANNEL *chan=0;
+	const char *msg_id=0;
+	MESSAGE_LIST mlist={0};
 	str=cmd->data;
 	get_word(str,chan_name,sizeof(chan_name));
+	printf(">>>process get msgs:%s\n",chan_name);
+	if(!get_channel_obj_from_irc_chan(chan_name,&chan)){
+		char *tmp=0;
+		int tmp_len=0;
+		append_printf(&tmp,&tmp_len,"%s %s",get_irc_msg_str(UNKNOWN_CHAN),chan_name);
+		push_irc_msg(tmp);
+		free(tmp);
+		return;
+	}
+	printf(">>>begin parameter process\n");
+	sort_messages(&chan->msgs);
 	str=seek_next_word(str);
 	if(str){
-
+		unsigned char a=str[0];
+		if(isalpha(a)){
+			if(startswithi(str,"before"))
+				position=-1;
+			else if(startswithi(str,"after"))
+				position=1;
+			str=seek_next_word(str);
+		}
+		if(str){
+			a=str[0];
+			if(isdigit(a)){
+				if(strchr(str,'-')){
+					__int64 ftime=0;
+					time_str_to_ftime(str,&ftime);
+					get_nearest_message_id(&chan->msgs,ftime,&msg_id);
+				}else{
+					limit=atoi(str);
+				}
+			}
+		}
+	}
+	printf(">>>calling params: limit:%i position:%i msg_id:%s\n",limit,position,msg_id);
+	get_messages(conn,&mlist,chan->id,limit,position,msg_id,FALSE);
+	printf(">>message count:%i\n",mlist.count);
+	{
+		int i,count;
+		count=mlist.count;
+		for(i=0;i<count;i++){
+			MESSAGE *m;
+			void *ptr;
+			m=&mlist.m[i];
+			ptr=bsearch((void*)m,chan->msgs.m,chan->msgs.count,sizeof(MESSAGE),&binsearch_compare_message);
+			if(0==ptr){
+				if(chan->msgs.count>=10000)
+					break;
+				printf(">>adding message:%s\n",m->timestamp);
+				add_message(&chan->msgs,m);
+			}
+		}
+		sort_messages(&chan->msgs);
+		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",1);
+		remove_all_msg(&mlist);
 	}
 }
 
@@ -1769,7 +1885,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 					process_list_chan(&cmd);
 					break;
 				case CMD_GET_MSGS:
-					process_get_msgs(&cmd);
+					process_get_msgs(c,&cmd);
 					break;
 				case CMD_POST_MSG:
 					process_post_msg(c,&cmd);
@@ -1797,7 +1913,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 			delta=GetTickCount()-tick;
 			if(delta>40000){
 				char tmp[40]={0};
-				printf("main thread heartbeat\n");
+				//printf("main thread heartbeat\n");
 				get_me_user_name(c,tmp,sizeof(tmp));
 				tick=GetTickCount();
 			}
@@ -1917,7 +2033,9 @@ static int do_wait()
 static int test_func()
 {
 	__int64 val;
-	str_to_64bit("2019-08-12T19:24:48.725000+00:00",&val);
+	const char *tmp="2019-08-12T19:24:48.725000+00:00";
+	time_str_to_ftime(tmp,&val);
+	printf("%I64X\n",val);
 	do_wait();
 	exit(0);
 }

@@ -417,7 +417,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		}
 		break;
 	case 11: //hrtbt ack
-		DBGPRINT("recv heartbeat\n");
+		//DBGPRINT("recv heartbeat\n");
 		break;
 	default:
 		DBGPRINT("unhandled opcode:%i\n",opcode);
@@ -462,7 +462,7 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 		case 0: // text packet
 		case 1: // binary packet
 		case 2: // continuation
-			DBGPRINT("gateway data packet\n");
+			//DBGPRINT("gateway data packet\n");
 			append_data(&tmp,&tmp_size,payload.data,payload.len);
 			if(payload.is_final){
 				null_str(&tmp,tmp_size);
