@@ -1430,6 +1430,8 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 {
 	int i,msg_len;
 	const int block_size=350;
+	if(0==msg)
+		return;
 	msg_len=strlen(msg);
 	for(i=0;i<msg_len;i+=block_size){
 		char irc_msg[512]={0};
@@ -1449,9 +1451,20 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 	}
 }
 
+static void post_irc_server_msg(const char *msg)
+{
+	char tmp[512]={0};
+	if(0==msg)
+		return;
+	__snprintf(tmp,sizeof(tmp),"%s %s",get_irc_msg_str(SERVER_INFO),msg);
+	push_irc_msg(tmp);
+}
+
 static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan,const char *prefix,int flags)
 {	
 	int i;
+	SYSTEMTIME time={0};
+	int time_init=FALSE;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
 		const char *nick;
@@ -1461,10 +1474,32 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 			break;
 		m=&mlist->m[i];
 		nick=m->author;
-		if(flags)
-			append_printf(&msg,&msg_len,"%s[%.19s] %s",prefix,m->timestamp,m->msg);
-		else
+		if(flags){
+			int post_time=FALSE;
+			if(!time_init){
+				time_str_to_systime(m->timestamp,&time);
+				time_init=TRUE;
+			}
+			if(i==start_index || i==(end_index-1)){
+				post_time=TRUE;
+			}else{
+				SYSTEMTIME tmp_time={0};
+				time_str_to_systime(m->timestamp,&tmp_time);
+				if(tmp_time.wDay!=time.wDay){
+					time=tmp_time;
+					post_time=TRUE;
+				}
+			}
+			if(post_time){
+				char tmp[80]={0};
+				__snprintf(tmp,sizeof(tmp),"%.19s",m->timestamp);
+				post_msg_to_irc(irc_chan,"--------",tmp);
+			}
+		}
+		if(m->msg && m->msg[0])
 			append_printf(&msg,&msg_len,"%s%s",prefix,m->msg);
+		else
+			append_printf(&msg,&msg_len,"<attachment>");
 		if(msg){
 			post_msg_to_irc(irc_chan,nick,msg);
 			free(msg);
@@ -1556,7 +1591,7 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				push_irc_msg(topic);
 				free(topic);
 			}
-			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:",TRUE);
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED: ",TRUE);
 		}
 	}else{
 		char tmp[80];
@@ -1747,7 +1782,7 @@ static int get_channel_obj_from_irc_chan(const char *irc_chan,CHANNEL **chan_obj
 	return result;
 }
 //get the message that is closest less than given time
-static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int position,const char **msg_id)
+static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int *position,const char **msg_id)
 {
 	int result=FALSE;
 	int i,count;
@@ -1765,9 +1800,30 @@ static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int position
 		*msg_id=mlist->m[found].id;
 		result=TRUE;
 	}else{
-		if(position<0 && count){
-			*msg_id=mlist->m[0].id;
-			result=TRUE;
+		if(count){
+			MESSAGE *start_msg,*end_msg;
+			int dir=*position;
+			start_msg=&mlist->m[0];
+			end_msg=&mlist->m[mlist->count-1];
+			if(start_msg->ftime > ftime){
+				//we are below the lowest
+				*msg_id=start_msg->id;
+				//if(dir>0)
+				//	*position=0;
+				result=TRUE;
+			}else if(end_msg->ftime < ftime){
+				//we are above the highest
+				*msg_id=end_msg->id;
+				//if(dir<0)
+				//	*position=0; //around
+				result=TRUE;
+			}else if(start_msg->ftime == ftime){
+				*msg_id=start_msg->id;
+				result=TRUE;
+			}else if(end_msg->ftime == ftime){
+				*msg_id=end_msg->id;
+				result=TRUE;
+			}
 		}
 	}
 	return result;
@@ -1825,6 +1881,20 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				position=1;
 			else if(startswithi(str,"pin"))
 				get_pinned=TRUE;
+			else if(startswithi(str,"info")){
+				char *tmp=0;
+				int tmp_len=0;
+				if(chan->msgs.count)
+					append_printf(&tmp,&tmp_len,"%.19s -> %.19s (%u)",chan->msgs.m[0].timestamp,chan->msgs.m[chan->msgs.count-1].timestamp,chan->msgs.count);
+				else
+					append_printf(&tmp,&tmp_len,"NO MESSAGES AVAILABLE");
+				if(tmp){
+					post_msg_to_irc(chan_name,"MSGINFO",tmp);
+					post_irc_server_msg(tmp);
+					free(tmp);
+				}
+				return;
+			}
 			str=seek_next_word(str);
 		}
 		if(str){
@@ -1833,15 +1903,18 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(strchr(str,'-')){
 					__int64 ftime=0;
 					time_str_to_ftime(str,&ftime);
-					get_nearest_message_id(&chan->msgs,ftime,position,&msg_id);
+					get_nearest_message_id(&chan->msgs,ftime,&position,&msg_id);
 				}else{
 					limit=atoi(str);
 				}
+			}else{
+				if(chan->msgs.count)
+					msg_id=chan->msgs.m[chan->msgs.count-1].id;
 			}
 		}
 	}
 	if(get_pinned){
-		push_irc_msgs(&chan->pin_msgs,0,chan->pin_msgs.count,chan_name,"PINNED:",TRUE);
+		push_irc_msgs(&chan->pin_msgs,0,chan->pin_msgs.count,chan_name,"PINNED: ",TRUE);
 		return;
 	}
 	printf(">>>calling params: limit:%i position:%i msg_id:%s\n",limit,position,msg_id);
@@ -1857,7 +1930,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 			m=&mlist.m[i];
 			ptr=bsearch((void*)m,chan->msgs.m,chan->msgs.count,sizeof(MESSAGE),&binsearch_compare_message);
 			if(0==ptr){
-				if(chan->msgs.count>=10000){
+				if(chan->msgs.count>=50000){
 					printf("WARNING: max message storage count reached\n");
 					break;
 				}

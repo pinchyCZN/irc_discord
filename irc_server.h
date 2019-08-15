@@ -9,6 +9,7 @@ enum{
 	END_NAME_LIST=202,
 	UNKNOWN_CHAN=437,
 	CHAN_TOPIC=332,
+	SERVER_INFO=999,
 };
 
 void irc_thread(void *args);

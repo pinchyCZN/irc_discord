@@ -40,4 +40,6 @@ void replace_chars(char *str,const char *list,const char *rlist);
 
 const char *seek_next_digit(const char *str);
 
+void time_str_to_systime(const char *str,SYSTEMTIME *time);
+
 void time_str_to_ftime(const char *str,__int64 *val);

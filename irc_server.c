@@ -128,6 +128,7 @@ static CODE_MAP code_map[]={
 	{"END_NAME_LIST",END_NAME_LIST},
 	{"UNKNOWN_CHAN",UNKNOWN_CHAN},
 	{"CHAN_TOPIC",CHAN_TOPIC},
+	{"SERVER_INFO",SERVER_INFO},
 };
 
 static int get_irc_msg_code(const char *str)
@@ -229,6 +230,12 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 			topic=seek_next_word(ptr);
 			if(topic && topic[0]!=0)
 				__snprintf(tmp,sizeof(tmp),":discord.server 332 nick %s :%s\r\n",chan,topic);
+		}
+		break;
+	case SERVER_INFO:
+		{
+			if(data)
+				__snprintf(tmp,sizeof(tmp),":discord.server 999 info :%s\r\n",data);
 		}
 		break;
 	default:

@@ -520,26 +520,22 @@ const char *seek_next_digit(const char *str)
 	return result;
 }
 
-void time_str_to_ftime(const char *str,__int64 *val)
+void time_str_to_systime(const char *str,SYSTEMTIME *time)
 {
-	SYSTEMTIME time={0};
-	FILETIME ftime={0};
-	__int64 tmp=0;
-	__int64 *ptr64;
 	int i,count,end_index;
 	const char *ptr=str;
 	WORD *dst[7]={
-		&time.wYear,
-		&time.wMonth,
-		&time.wDay,
-		&time.wHour,
-		&time.wMinute,
-		&time.wSecond,
-		&time.wMilliseconds,
+		&time->wYear,
+		&time->wMonth,
+		&time->wDay,
+		&time->wHour,
+		&time->wMinute,
+		&time->wSecond,
+		&time->wMilliseconds,
 	};
 	if(0==str)
 		return;
-	if(0==val)
+	if(0==time)
 		return;
 	count=_countof(dst);
 	end_index=count-1;
@@ -561,6 +557,15 @@ void time_str_to_ftime(const char *str,__int64 *val)
 		if(0==ptr)
 			break;
 	}
+}
+
+void time_str_to_ftime(const char *str,__int64 *val)
+{
+	SYSTEMTIME time={0};
+	FILETIME ftime={0};
+	__int64 tmp=0;
+	__int64 *ptr64;
+	time_str_to_systime(str,&time);
 	SystemTimeToFileTime(&time,&ftime);
 	ptr64=(__int64*)&ftime;
 	tmp=*ptr64;
