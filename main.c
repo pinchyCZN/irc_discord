@@ -1451,13 +1451,18 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 	}
 }
 
-static void post_irc_server_msg(const char *msg)
+static void post_irc_server_msg(const char *fmt,...)
 {
+	va_list ap;
+	char msg[512]={0};
 	char tmp[512]={0};
-	if(0==msg)
+	if(0==fmt)
 		return;
-	__snprintf(tmp,sizeof(tmp),"%s %s",get_irc_msg_str(SERVER_INFO),msg);
-	push_irc_msg(tmp);
+	va_start(ap,fmt);
+	_vsnprintf(tmp,sizeof(tmp),fmt,ap);
+	tmp[sizeof(tmp)-1]=0;
+	__snprintf(msg,sizeof(msg),"%s %s",get_irc_msg_str(SERVER_INFO),tmp);
+	push_irc_msg(msg);
 }
 
 static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,const char *irc_chan,const char *prefix,int flags)
@@ -1637,10 +1642,11 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 	int i,count;
 	char chan_name[160]={0};
 	const char *chan_msg;
-	int exit=FALSE;
+	int found_chan=FALSE;
 	get_word(cmd->data,chan_name,sizeof(chan_name));
 	chan_msg=seek_next_word(cmd->data);
 	if(0==chan_msg || 0==chan_name[0]){
+		post_irc_server_msg("ERROR unable to extract channel name");	
 		printf("cant find chan data from:%s",cmd->data);
 		return result;
 	}
@@ -1660,7 +1666,7 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 			print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
 			if(0==stricmp(irc_chan,chan_name)){
 				char *tmp;
-				exit=TRUE;
+				found_chan=TRUE;
 				if(':'==chan_msg[0]){
 					chan_msg++;
 				}
@@ -1676,9 +1682,12 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 				break;
 			}
 		}
-		if(exit){
+		if(found_chan){
 			break;
 		}
+	}
+	if(!found_chan){
+		post_irc_server_msg("ERROR unable to find channel %s",chan_name);
 	}
 	return result;
 }
@@ -1890,7 +1899,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 					append_printf(&tmp,&tmp_len,"NO MESSAGES AVAILABLE");
 				if(tmp){
 					post_msg_to_irc(chan_name,"MSGINFO",tmp);
-					post_irc_server_msg(tmp);
+					post_irc_server_msg("%s",tmp);
 					free(tmp);
 				}
 				return;

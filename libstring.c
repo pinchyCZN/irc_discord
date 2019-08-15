@@ -533,6 +533,15 @@ void time_str_to_systime(const char *str,SYSTEMTIME *time)
 		&time->wSecond,
 		&time->wMilliseconds,
 	};
+	short time_limits[]={
+		2000,9999,
+		1,12,
+		1,31,
+		0,23,
+		0,59,
+		0,59,
+		0,999,
+	};
 	if(0==str)
 		return;
 	if(0==time)
@@ -543,6 +552,8 @@ void time_str_to_systime(const char *str,SYSTEMTIME *time)
 		WORD *w;
 		char *end=0;
 		int val;
+		int upper,lower;
+		int limit_index=i*2;
 		w=dst[i];
 		val=strtoul(ptr,&end,10);
 		if(i==end_index){ //millisecond
@@ -550,6 +561,12 @@ void time_str_to_systime(const char *str,SYSTEMTIME *time)
 			if(val>=1000 || val<0)
 				val=0;
 		}
+		lower=time_limits[limit_index];
+		upper=time_limits[limit_index+1];
+		if(val>upper)
+			val=upper;
+		else if(val<lower)
+			val=lower;
 		w[0]=(WORD)val;
 		if(0==end)
 			break;
