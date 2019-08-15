@@ -1114,6 +1114,8 @@ static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 			printf(">>getting messages for:%s\n",chan->name);
 			get_messages(c,&chan->msgs,chan->id,100,0,NULL,FALSE);
 			get_messages(c,&chan->pin_msgs,chan->id,0,0,NULL,TRUE);
+			sort_messages(&chan->msgs);
+			sort_messages(&chan->pin_msgs);
 			printf("%s %s msg count %i pinned count:%i\n",g->name,chan->name,chan->msgs.count,chan->pin_msgs.count);
 			msg_count=chan->msgs.count;
 			for(k=0;k<msg_count;k++){
@@ -1460,11 +1462,13 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 		m=&mlist->m[i];
 		nick=m->author;
 		if(flags)
-			append_printf(&msg,&msg_len,"[%.19s] %s",m->timestamp,m->msg);
+			append_printf(&msg,&msg_len,"%s[%.19s] %s",prefix,m->timestamp,m->msg);
 		else
 			append_printf(&msg,&msg_len,"%s%s",prefix,m->msg);
-		post_msg_to_irc(irc_chan,nick,msg);
-		free(msg);
+		if(msg){
+			post_msg_to_irc(irc_chan,nick,msg);
+			free(msg);
+		}
 	}
 }
 
@@ -1552,7 +1556,7 @@ static int process_join_chan(DISCORD_CMD *cmd)
 				push_irc_msg(topic);
 				free(topic);
 			}
-			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED: ",0);
+			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED:",TRUE);
 		}
 	}else{
 		char tmp[80];
@@ -1743,7 +1747,7 @@ static int get_channel_obj_from_irc_chan(const char *irc_chan,CHANNEL **chan_obj
 	return result;
 }
 //get the message that is closest less than given time
-static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,const char **msg_id)
+static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int position,const char **msg_id)
 {
 	int result=FALSE;
 	int i,count;
@@ -1760,6 +1764,11 @@ static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,const char *
 	if(found>=0){
 		*msg_id=mlist->m[found].id;
 		result=TRUE;
+	}else{
+		if(position<0 && count){
+			*msg_id=mlist->m[0].id;
+			result=TRUE;
+		}
 	}
 	return result;
 }
@@ -1792,6 +1801,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 	CHANNEL *chan=0;
 	const char *msg_id=0;
 	MESSAGE_LIST mlist={0};
+	int get_pinned=FALSE;
 	str=cmd->data;
 	get_word(str,chan_name,sizeof(chan_name));
 	printf(">>>process get msgs:%s\n",chan_name);
@@ -1813,6 +1823,8 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				position=-1;
 			else if(startswithi(str,"after"))
 				position=1;
+			else if(startswithi(str,"pin"))
+				get_pinned=TRUE;
 			str=seek_next_word(str);
 		}
 		if(str){
@@ -1821,15 +1833,20 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(strchr(str,'-')){
 					__int64 ftime=0;
 					time_str_to_ftime(str,&ftime);
-					get_nearest_message_id(&chan->msgs,ftime,&msg_id);
+					get_nearest_message_id(&chan->msgs,ftime,position,&msg_id);
 				}else{
 					limit=atoi(str);
 				}
 			}
 		}
 	}
+	if(get_pinned){
+		push_irc_msgs(&chan->pin_msgs,0,chan->pin_msgs.count,chan_name,"PINNED:",TRUE);
+		return;
+	}
 	printf(">>>calling params: limit:%i position:%i msg_id:%s\n",limit,position,msg_id);
 	get_messages(conn,&mlist,chan->id,limit,position,msg_id,FALSE);
+	sort_messages(&mlist);
 	printf(">>message count:%i\n",mlist.count);
 	{
 		int i,count;
@@ -1840,13 +1857,14 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 			m=&mlist.m[i];
 			ptr=bsearch((void*)m,chan->msgs.m,chan->msgs.count,sizeof(MESSAGE),&binsearch_compare_message);
 			if(0==ptr){
-				if(chan->msgs.count>=10000)
+				if(chan->msgs.count>=10000){
+					printf("WARNING: max message storage count reached\n");
 					break;
-				printf(">>adding message:%s\n",m->timestamp);
+				}
+				printf(">>adding message:%s %I64X\n",m->timestamp,m->ftime);
 				add_message(&chan->msgs,m);
 			}
 		}
-		sort_messages(&chan->msgs);
 		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",1);
 		remove_all_msg(&mlist);
 	}
@@ -2033,7 +2051,7 @@ static int do_wait()
 static int test_func()
 {
 	__int64 val;
-	const char *tmp="2019-08-12T19:24:48.725000+00:00";
+	const char *tmp="2019-07-12T18:23:29.016000+00:00";
 	time_str_to_ftime(tmp,&val);
 	printf("%I64X\n",val);
 	do_wait();
@@ -2042,6 +2060,7 @@ static int test_func()
 
 int main(int argc,char **argv)
 {
+	//test_func();
 	init_mutex();
 	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
 	_beginthread(&gateway_thread,0,NULL);

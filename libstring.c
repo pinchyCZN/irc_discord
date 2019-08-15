@@ -511,7 +511,7 @@ const char *seek_next_digit(const char *str)
 			break;
 		if(isspace(a))
 			break;
-		if(isdigit(a)){
+		if(a>='0' && a<='9'){
 			result=str+index;
 			break;
 		}
@@ -526,7 +526,7 @@ void time_str_to_ftime(const char *str,__int64 *val)
 	FILETIME ftime={0};
 	__int64 tmp=0;
 	__int64 *ptr64;
-	int i,count;
+	int i,count,end_index;
 	const char *ptr=str;
 	WORD *dst[7]={
 		&time.wYear,
@@ -542,14 +542,18 @@ void time_str_to_ftime(const char *str,__int64 *val)
 	if(0==val)
 		return;
 	count=_countof(dst);
+	end_index=count-1;
 	for(i=0;i<count;i++){
 		WORD *w;
 		char *end=0;
 		int val;
 		w=dst[i];
 		val=strtoul(ptr,&end,10);
-		if(val>0xFFFF)
+		if(i==end_index){ //millisecond
 			val/=1000;
+			if(val>=1000 || val<0)
+				val=0;
+		}
 		w[0]=(WORD)val;
 		if(0==end)
 			break;
