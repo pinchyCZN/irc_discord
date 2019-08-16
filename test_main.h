@@ -1,5 +1,16 @@
 #pragma once
 
+static int do_wait()
+{
+	while(1){
+		int key=getch();
+		if(0x1b==key){
+			exit(0);
+		}
+	}
+	return 0;
+}
+
 
 static int test_time()
 {
@@ -9,7 +20,38 @@ static int test_time()
 	printf("%I64X\n",val);
 }
 
-static int test_func()
+static void do_discord_test(CONNECTION *conn)
+{
+	int i,count;
+	count=g_guild_list.count;
+	printf(">>>doing discord test<<<\n");
+	for(i=0;i<count;i++){
+		GUILD *g;
+		g=&g_guild_list.guild[i];
+		//#Turok_Speedrunning.general
+		if(strstr(g->name,"Turok_Speedrunning")){
+			int j;
+			for(j=0;j<g->channels.count;j++){
+				CHANNEL *c;
+				c=&g->channels.chan[j];
+				if(strstr(c->name,"general")){
+					const char *chan_id=c->id;
+					MESSAGE_LIST mlist={0};
+					printf(">>>getting messages<<<\n");
+					get_messages(conn,&mlist,chan_id,100,0,NULL,0);
+					sort_messages(&mlist);
+					printf("count:%i\n",mlist.count);
+					dump_message_list(&mlist,"==");
+					remove_all_msg(&mlist);
+					break;
+				}
+			}
+			break;
+		}
+	}
+}
+
+static int test_msg_stuff()
 {
 	int i;
 	MESSAGE_LIST mlist={0};
@@ -34,6 +76,12 @@ static int test_func()
 		printf("%s %s\n",m->id,m->msg);
 	}
 	printf("count=%i\n",mlist.count);
+}
+static int test_func()
+{
+	int x;
+	x=isspace(0);
+	printf("%i\n",x);
 	do_wait();
 	exit(0);
 }

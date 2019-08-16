@@ -387,7 +387,11 @@ static int handle_connection(SOCKET s)
 							cmd_valid=TRUE;
 						}
 					}else if(startswithi(cmd,"LIST")){
-						add_discord_cmd(CMD_LIST_CHAN,"");
+						const char *tmp;
+						tmp=seek_next_word(line);
+						if(0==tmp)
+							tmp="";
+						add_discord_cmd(CMD_LIST_CHAN,tmp);
 						cmd_valid=TRUE;
 					}else if(startswithi(cmd,"PRIVMSG")){
 						const char *tmp;
