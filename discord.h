@@ -4,6 +4,7 @@ enum{
 	CMD_GET_MSGS,
 	CMD_POST_MSG,
 	CMD_CHAN_MSG,
+	CMD_GET_NAMES,
 	CMD_TEST,
 };
 

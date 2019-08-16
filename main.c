@@ -85,6 +85,7 @@ static int remove_all_msg(MESSAGE_LIST *mlist)
 	mlist->count=0;
 	return TRUE;
 }
+
 static int remove_all_nicks(NICK_LIST *nlist)
 {
 	int i,count;
@@ -286,11 +287,15 @@ static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
 	MESSAGE *ptr;
 	char *author,*auth_id,*id,*content,*timestamp;
 	int size;
+	__int64 ftime;
 	author=strdup(msg->author);
 	auth_id=strdup(msg->auth_id);
 	id=strdup(msg->id);
 	content=strdup(msg->msg);
 	timestamp=strdup(msg->timestamp);
+	ftime=msg->ftime;
+	if(0==ftime)
+		time_str_to_ftime(timestamp,&ftime);
 	if(0==author || 0==auth_id || 0==id || 0==content || 0==timestamp){
 		goto ERROR_ADD_MSG;
 	}
@@ -308,7 +313,7 @@ static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
 		tmp->id=id;
 		tmp->msg=content;
 		tmp->timestamp=timestamp;
-		time_str_to_ftime(timestamp,&tmp->ftime);
+		tmp->ftime=ftime;
 		mlist->m=ptr;
 		mlist->count=count;
 		result=TRUE;
@@ -324,21 +329,29 @@ ERROR_ADD_MSG:
 	return result;
 }
 
-static int have_msg(MESSAGE_LIST *mlist,MESSAGE *msg)
+static void remove_some_messages(MESSAGE_LIST *mlist,int target_amount)
 {
-	int result=FALSE;
 	int i,count;
+	MESSAGE_LIST new_list={0};
+	int center,delta;
+	int start,end;
 	count=mlist->count;
+	if(count<target_amount)
+		return;
+	center=count/2;
+	delta=(count-target_amount)/2;
+	start=center-delta;
+	end=center+delta;
 	for(i=0;i<count;i++){
-		MESSAGE *m;
-		m=&mlist->m[i];
-		if(0==stricmp(m->id,msg->id)){
-			result=TRUE;
-			break;
+		if(i<start || i>end){
+			MESSAGE *m=&mlist->m[i];
+			add_message(&new_list,m);
 		}
 	}
-	return result;
+	remove_all_msg(mlist);
+	*mlist=new_list;
 }
+
 
 static int compare_message(const void *arg1,const void *arg2)
 {
@@ -1010,6 +1023,7 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,un
 						msg.id=(char*)id;
 						msg.msg=(char*)content;
 						msg.timestamp=(char*)timestamp;
+						time_str_to_ftime(timestamp,&msg.ftime);
 						if(pinned)
 							printf("msg:%s %s\n",auth,content);
 						if(!add_message(mlist,&msg)){
@@ -1944,7 +1958,8 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 		if(str){
 			a=str[0];
 			if(isdigit(a)){
-				if(strchr(str,'-')){
+				int val=atoi(str);
+				if(strchr(str,'-') || val>=2000){
 					__int64 ftime=0;
 					time_str_to_ftime(str,&ftime);
 					get_nearest_message_id(&chan->msgs,ftime,&position,&msg_id);
@@ -1955,6 +1970,10 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(chan->msgs.count)
 					msg_id=chan->msgs.m[chan->msgs.count-1].id;
 			}
+		}else{
+			__int64 ftime;
+			ftime=get_current_ftime();
+			get_nearest_message_id(&chan->msgs,ftime,&position,&msg_id);
 		}
 	}
 	if(get_pinned){
@@ -1975,11 +1994,11 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 			ptr=bsearch((void*)m,chan->msgs.m,chan->msgs.count,sizeof(MESSAGE),&binsearch_compare_message);
 			if(0==ptr){
 				if(chan->msgs.count>=50000){
-					printf("WARNING: max message storage count reached\n");
-					break;
+					remove_some_messages(&chan->msgs,30000);
 				}
 				printf(">>adding message:%s %I64X\n",m->timestamp,m->ftime);
 				add_message(&chan->msgs,m);
+				sort_messages(&chan->msgs);
 			}
 		}
 		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",1);
@@ -1987,6 +2006,24 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 		remove_all_msg(&mlist);
 		push_irc_nick_list(&chan->nicks,chan_name);
 	}
+}
+
+static void process_get_names(DISCORD_CMD *cmd)
+{
+	char irc_chan[160]={0};
+	CHANNEL *chan;
+	get_word(cmd->data,irc_chan,sizeof(irc_chan));
+	if(0==irc_chan[0])
+		return;
+	if(!get_channel_obj_from_irc_chan(irc_chan,&chan)){
+		char *tmp=0;
+		int tmp_len=0;
+		append_printf(&tmp,&tmp_len,"%s %s",get_irc_msg_str(UNKNOWN_CHAN),irc_chan);
+		push_irc_msg(tmp);
+		free(tmp);
+		return;
+	}
+	push_irc_nick_list(&chan->nicks,irc_chan);
 }
 
 static int process_requests(CONNECTION *c,const char *uname)
@@ -2028,6 +2065,9 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_CHAN_MSG:
 					process_chan_msg(&cmd,uname);
+					break;
+				case CMD_GET_NAMES:
+					process_get_names(&cmd);
 					break;
 				case CMD_TEST:
 					do_discord_test(c);
@@ -2166,15 +2206,7 @@ static int do_wait()
 	return 0;
 }
 
-static int test_func()
-{
-	__int64 val;
-	const char *tmp="2019-07-12T18:23:29.016000+00:00";
-	time_str_to_ftime(tmp,&val);
-	printf("%I64X\n",val);
-	do_wait();
-	exit(0);
-}
+#include "test_main.h"
 
 int main(int argc,char **argv)
 {

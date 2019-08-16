@@ -396,6 +396,13 @@ static int handle_connection(SOCKET s)
 							cmd_valid=TRUE;
 							add_discord_cmd(CMD_POST_MSG,tmp);
 						}
+					}else if(startswithi(cmd,"NAMES")){
+						const char *chan;
+						chan=seek_next_word(line);
+						if(chan){
+							cmd_valid=TRUE;
+							add_discord_cmd(CMD_GET_NAMES,chan);
+						}
 					}else if(startswithi(cmd,"GETMSG")){
 						const char *tmp;
 						tmp=seek_next_word(line);

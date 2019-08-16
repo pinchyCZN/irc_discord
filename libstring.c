@@ -588,3 +588,16 @@ void time_str_to_ftime(const char *str,__int64 *val)
 	tmp=*ptr64;
 	*val=tmp;
 }
+
+__int64 get_current_ftime()
+{
+	SYSTEMTIME stime={0};
+	FILETIME ftime={0};
+	__int64 *ptr;
+	__int64 tmp;
+	GetSystemTime(&stime);
+	SystemTimeToFileTime(&stime,&ftime);
+	ptr=(__int64*)&ftime;
+	tmp=*ptr;
+	return tmp;
+}

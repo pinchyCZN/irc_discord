@@ -183,6 +183,7 @@
     <ClInclude Include="libstring.h" />
     <ClInclude Include="network.h" />
     <ClInclude Include="parson.h" />
+    <ClInclude Include="test_main.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
