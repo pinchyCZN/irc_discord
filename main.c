@@ -67,6 +67,77 @@ static void DBGPRINT(const char *fmt,...)
 	vprintf(fmt,ap);
 }
 
+static int remove_all_msg(MESSAGE_LIST *mlist)
+{
+	int i,count;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m;
+		m=&mlist->m[i];
+		free(m->author);
+		free(m->auth_id);
+		free(m->id);
+		free(m->msg);
+		free(m->timestamp);
+	}
+	free(mlist->m);
+	mlist->m=0;
+	mlist->count=0;
+	return TRUE;
+}
+static int remove_all_nicks(NICK_LIST *nlist)
+{
+	int i,count;
+	count=nlist->nick_count;
+	for(i=0;i<count;i++){
+		char *tmp=nlist->nick[i];
+		if(tmp){
+			free(tmp);
+			nlist->nick[i]=0;
+		}
+	}
+	nlist->nick=0;
+	nlist->nick_count=0;
+	return TRUE;
+}
+static int remove_all_channels(CHANNEL_LIST *clist)
+{
+	int i,count;
+	count=clist->count;
+	for(i=0;i<count;i++){
+		CHANNEL *tmp;
+		tmp=&clist->chan[i];
+		free(tmp->id);
+		free(tmp->name);
+		free(tmp->topic);
+		remove_all_msg(&tmp->msgs);
+		remove_all_msg(&tmp->pin_msgs);
+		remove_all_nicks(&tmp->nicks);
+	}
+	if(count>0){
+		free(clist->chan);
+		clist->chan=0;
+		clist->count=0;
+	}
+	return TRUE;
+}
+static int remove_all_guilds(GUILD_LIST *glist)
+{
+	int i,count;
+	count=glist->count;
+	for(i=0;i<count;i++){
+		GUILD *tmp;
+		tmp=&glist->guild[i];
+		remove_all_channels(&tmp->channels);
+		free(tmp->id);
+		free(tmp->name);
+	}
+	free(glist->guild);
+	glist->guild=0;
+	glist->count=0;
+	return TRUE;
+}
+
 static int add_guild(GUILD_LIST *glist,GUILD *g)
 {
 	int result=FALSE;
@@ -176,6 +247,38 @@ static int add_nick(NICK_LIST *nlist,const char *nick)
 	return result;
 }
 
+static int my_strcmp(const void *arg1,const void *arg2)
+{
+	char **a,**b;
+	a=(char**)arg1;
+	b=(char**)arg2;
+	int res=strcmp(a[0],b[0]);
+	return res;
+}
+static int merge_new_nicks(NICK_LIST *nlist,MESSAGE_LIST *mlist)
+{
+	int result=0;
+	int i,count;
+	qsort(nlist->nick,nlist->nick_count,sizeof(char*),&my_strcmp);
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m;
+		char *str;
+		if(nlist->nick_count>=1000)
+			break;
+		m=&mlist->m[i];
+		str=bsearch(&m->author,nlist->nick,nlist->nick_count,sizeof(char*),&my_strcmp);
+		if(0==str){
+			printf("adding nick:%s\n",m->author);
+			add_nick(nlist,m->author);
+			qsort(nlist->nick,nlist->nick_count,sizeof(char**),&my_strcmp);
+			result++;
+		}
+	}
+	qsort(nlist->nick,nlist->nick_count,sizeof(char**),&my_strcmp);
+	return result;
+}
+
 static int add_message(MESSAGE_LIST *mlist,MESSAGE *msg)
 {
 	int result=FALSE;
@@ -235,77 +338,6 @@ static int have_msg(MESSAGE_LIST *mlist,MESSAGE *msg)
 		}
 	}
 	return result;
-}
-
-static int remove_all_msg(MESSAGE_LIST *mlist)
-{
-	int i,count;
-	count=mlist->count;
-	for(i=0;i<count;i++){
-		MESSAGE *m;
-		m=&mlist->m[i];
-		free(m->author);
-		free(m->auth_id);
-		free(m->id);
-		free(m->msg);
-		free(m->timestamp);
-	}
-	free(mlist->m);
-	mlist->m=0;
-	mlist->count=0;
-	return TRUE;
-}
-static int remove_all_nicks(NICK_LIST *nlist)
-{
-	int i,count;
-	count=nlist->nick_count;
-	for(i=0;i<count;i++){
-		char *tmp=nlist->nick[i];
-		if(tmp){
-			free(tmp);
-			nlist->nick[i]=0;
-		}
-	}
-	nlist->nick=0;
-	nlist->nick_count=0;
-	return TRUE;
-}
-static int remove_all_channels(CHANNEL_LIST *clist)
-{
-	int i,count;
-	count=clist->count;
-	for(i=0;i<count;i++){
-		CHANNEL *tmp;
-		tmp=&clist->chan[i];
-		free(tmp->id);
-		free(tmp->name);
-		free(tmp->topic);
-		remove_all_msg(&tmp->msgs);
-		remove_all_msg(&tmp->pin_msgs);
-		remove_all_nicks(&tmp->nicks);
-	}
-	if(count>0){
-		free(clist->chan);
-		clist->chan=0;
-		clist->count=0;
-	}
-	return TRUE;
-}
-static int remove_all_guilds(GUILD_LIST *glist)
-{
-	int i,count;
-	count=glist->count;
-	for(i=0;i<count;i++){
-		GUILD *tmp;
-		tmp=&glist->guild[i];
-		remove_all_channels(&tmp->channels);
-		free(tmp->id);
-		free(tmp->name);
-	}
-	free(glist->guild);
-	glist->guild=0;
-	glist->count=0;
-	return TRUE;
 }
 
 static int compare_message(const void *arg1,const void *arg2)
@@ -1512,6 +1544,45 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 	}
 }
 
+static int push_irc_nick_list(NICK_LIST *nlist,const char *irc_chan)
+{
+	char *name_list=0;
+	int name_len=0;
+	int started=FALSE;
+	int i,count;
+	count=nlist->nick_count;
+	for(i=0;i<count;i++){
+		char *name;
+		//353 nick = #n64dev :@APE @AlexAltea @Atomim 
+		name=nlist->nick[i];
+		if(!started){
+			append_printf(&name_list,&name_len,"%s %s :",get_irc_msg_str(NAME_LIST),irc_chan);
+			started=TRUE;
+		}
+		append_printf(&name_list,&name_len,"%s ",name);
+		if(name_len>=350){
+			push_irc_msg(name_list);
+			name_list[0]=0;
+			started=FALSE;
+		}
+	}
+	if(name_list){
+		if(name_list[0])
+			push_irc_msg(name_list);
+		free(name_list);
+		name_list=0;
+		name_len=0;
+	}
+	if(count){
+		char *tmp=0;
+		int tmp_len=0;
+		append_printf(&tmp,&tmp_len,"%s %s",get_irc_msg_str(END_NAME_LIST),irc_chan);
+		push_irc_msg(tmp);
+		free(tmp);
+	}
+	return count;
+}
+
 static int process_join_chan(DISCORD_CMD *cmd)
 {
 	int result=FALSE;
@@ -1554,48 +1625,12 @@ static int process_join_chan(DISCORD_CMD *cmd)
 		push_irc_msg(tmp);
 		printf("OK JOIN CHANNEL: %s\n",irc_chan);
 		if(target_chan){
-			NICK_LIST *nlist;
-			char *name_list=0;
-			int name_len=0;
-			int started=FALSE;
-			nlist=&target_chan->nicks;
-			count=nlist->nick_count;
-			for(i=0;i<count;i++){
-				char *name;
-				//353 nick = #n64dev :@APE @AlexAltea @Atomim 
-				name=nlist->nick[i];
-				if(!started){
-					append_printf(&name_list,&name_len,"%s %s :",get_irc_msg_str(NAME_LIST),irc_chan);
-					started=TRUE;
-				}
-				append_printf(&name_list,&name_len,"%s ",name);
-				if(name_len>=350){
-					push_irc_msg(name_list);
-					name_list[0]=0;
-					started=FALSE;
-				}
-			}
-			if(name_list){
-				if(name_list[0])
-					push_irc_msg(name_list);
-				free(name_list);
-				name_list=0;
-				name_len=0;
-			}
-			if(count){
-				char *tmp=0;
-				int tmp_len=0;
-				append_printf(&tmp,&tmp_len,"%s %s",get_irc_msg_str(END_NAME_LIST),irc_chan);
-				push_irc_msg(tmp);
-				free(tmp);
-			}
-			{
-				char *topic=0;
-				int topic_len;
-				append_printf(&topic,&topic_len,"%s %s %s",get_irc_msg_str(CHAN_TOPIC),irc_chan,target_chan->topic);
-				push_irc_msg(topic);
-				free(topic);
-			}
+			char *topic=0;
+			int topic_len;
+			push_irc_nick_list(&target_chan->nicks,irc_chan);
+			append_printf(&topic,&topic_len,"%s %s %s",get_irc_msg_str(CHAN_TOPIC),irc_chan,target_chan->topic);
+			push_irc_msg(topic);
+			free(topic);
 			push_irc_msgs(&target_chan->pin_msgs,0,target_chan->pin_msgs.count,irc_chan,"PINNED: ",TRUE);
 		}
 	}else{
@@ -1948,7 +1983,9 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 			}
 		}
 		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",1);
+		merge_new_nicks(&chan->nicks,&mlist);
 		remove_all_msg(&mlist);
+		push_irc_nick_list(&chan->nicks,chan_name);
 	}
 }
 
@@ -1974,7 +2011,6 @@ static int process_requests(CONNECTION *c,const char *uname)
 			DISCORD_CMD cmd={0};
 			int res;
 			result=TRUE;
-			printf("DISCORD COMMAND EVENT\n");
 			res=pop_discord_cmd(&cmd);
 			if(res){
 				switch(cmd.cmd){

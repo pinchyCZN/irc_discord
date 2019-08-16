@@ -401,7 +401,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 					}
 				}
 			}
-			DBGPRINT("disc op 0\n");
+			//DBGPRINT("disc op 0\n");
 
 		}
 		break;
