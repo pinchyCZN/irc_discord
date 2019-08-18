@@ -375,6 +375,33 @@ static void sort_messages(MESSAGE_LIST *mlist)
 	qsort(mlist->m,mlist->count,sizeof(MESSAGE),&compare_message);
 }
 
+static int compare_guilds(const void *arg1,const void *arg2)
+{
+	const GUILD *g1,*g2;
+	int res;
+	g1=(GUILD*)arg1;
+	g2=(GUILD*)arg2;
+	res=strcmp(g1->name,g2->name);
+	return res;
+}
+static void sort_guilds(GUILD_LIST *glist)
+{
+	qsort(glist->guild,glist->count,sizeof(GUILD),&compare_guilds);
+}
+static int compare_channels(const void *arg1,const void *arg2)
+{
+	const CHANNEL *c1,*c2;
+	int res;
+	c1=(CHANNEL*)arg1;
+	c2=(CHANNEL*)arg2;
+	res=strcmp(c1->name,c2->name);
+	return res;
+}
+static void sort_channels(CHANNEL_LIST *clist)
+{
+	qsort(clist->chan,clist->count,sizeof(CHANNEL),&compare_channels);
+}
+
 static int get_channel_obj(const char *guild,const char *channel,CHANNEL **chan_obj)
 {
 	int result=FALSE;
@@ -603,7 +630,7 @@ static int is_resp_complete(char *data,int data_len)
 }
 
 
-// adds null terminator but keeps resp_len as original
+// allocates and adds null terminator but keeps resp_len as original
 static int get_response(CONNECTION *c,char **resp,int *resp_len)
 {
 	int result=FALSE;
@@ -707,6 +734,7 @@ static void save_last_error(char *resp,int resp_len)
 	}
 }
 
+//allocates resp_content
 static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_content_len)
 {
 	int result=FALSE;
@@ -947,6 +975,7 @@ static int get_guilds(CONNECTION *c,GUILD_LIST *glist)
 			free(content);
 		free(data);
 	}
+	sort_guilds(glist);
 	return result;
 
 }
@@ -1096,72 +1125,57 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
 	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
 	if(data){
-		ssl_context *ssl;
-		int msg_len;
-		char *resp=0;
-		int resp_len=0;
+		char *content=0;
+		int content_len=0;
 		int res;
 		//printf("REQ:%s\n",data);
 		//printf("---\n");
-		ssl=&c->ssl;
-		msg_len=strlen(data);
-		res=ssl_write(ssl,(BYTE*)data,msg_len);
-		if(res<0){
-			WSASetLastError(WSAECONNRESET);
-			goto ERROR_REQ;
-		}
-		res=get_response(c,&resp,&resp_len);
+		res=do_http_req(c,data,&content,&content_len);
 		if(res){
-			char *content;
-			int content_len=0;
-			//printf("RESP:\n%.*s\n",resp_len,resp);
-			res=get_content(resp,resp_len,&content,&content_len);
-			if(res){
-				JSON_Value *root;
-				root=json_parse_string(content);
-				if(json_value_get_type(root)==JSONArray){
-					JSON_Array *chans;
-					int i,count;
-					chans=json_value_get_array(root);
-					count=json_array_get_count(chans);
-					for(i=0;i<count;i++){
-						JSON_Object *chan;
-						double x;
-						chan=json_array_get_object(chans,i);
-						x=json_object_get_number(chan,"type");
-						if(0==x){ //text channels only
-							char *id,*name,*topic;
-							id=strdup(json_object_get_string(chan,"id"));
-							name=strdup(json_object_get_string(chan,"name"));
-							topic=strdup(json_object_get_string(chan,"topic"));
-							replace_chars(topic,"\t\n\r","  ");
-							if(id && name){
-								CHANNEL chan={0};
-								chan.id=id;
-								chan.name=name;
-								fix_spaced_str(name);
-								if(0==topic)
-									chan.topic="no topic set";
-								else
-									chan.topic=topic;
-								add_channel(clist,&chan);
-							}
-							free(name);free(topic);free(id);
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONArray){
+				JSON_Array *chans;
+				int i,count;
+				chans=json_value_get_array(root);
+				count=json_array_get_count(chans);
+				for(i=0;i<count;i++){
+					JSON_Object *chan;
+					double x;
+					chan=json_array_get_object(chans,i);
+					x=json_object_get_number(chan,"type");
+					if(0==x){ //text channels only
+						char *id,*name,*topic;
+						id=strdup(json_object_get_string(chan,"id"));
+						name=strdup(json_object_get_string(chan,"name"));
+						topic=strdup(json_object_get_string(chan,"topic"));
+						replace_chars(topic,"\t\n\r","  ");
+						if(id && name){
+							CHANNEL chan={0};
+							chan.id=id;
+							chan.name=name;
+							fix_spaced_str(name);
+							if(0==topic)
+								chan.topic="no topic set";
+							else
+								chan.topic=topic;
+							add_channel(clist,&chan);
 						}
+						free(name);free(topic);free(id);
 					}
 				}
-				json_value_free(root);
-				result=TRUE;
-			}else{
-				printf("failed to get content:\nresp=%.*s\n",resp_len,resp);
 			}
+			json_value_free(root);
+			result=TRUE;
 		}else{
 			printf("failed to get response\n");
 		}
-ERROR_REQ:
+		if(content){
+			free(content);
+		}
 		free(data);
-
 	}
+	sort_channels(clist);
 	return result;
 }
 static int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
@@ -1255,31 +1269,15 @@ static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
 		goto ERROR_POST;
 	}
 	{
-		ssl_context *ssl;
-		int msg_len;
-		char *resp=0;
-		int resp_len=0;
+		char *content=0;
+		int content_len=0;
 		int res;
-		//printf("REQ:%s\n",data);
-		//printf("---\n");
-		ssl=&c->ssl;
-		msg_len=strlen(data);
-		res=ssl_write(ssl,(BYTE*)data,msg_len);
-		if(res>0){
-			res=get_response(c,&resp,&resp_len);
-			if(res){
-				res=get_resp_code(resp,resp_len);
-				if(200!=res){
-					printf("failed to POST message:%.*s",resp_len,resp);
-				}else{
-					result=TRUE;
-				}
-			}else{
-				printf("failed to get response for POST message\n");
-			}
-		}else{
-			WSASetLastError(WSAECONNRESET);
+		res=do_http_req(c,data,&content,&content_len);
+		if(res){
+			result=TRUE;
 		}
+		if(content)
+			free(content);
 	}
 ERROR_POST:
 	free(data);
@@ -1750,7 +1748,12 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 			free(tmp);
 		}
 		if(!result){
-			post_msg_to_irc(chan_name,"ERROR","FAILED TO POST MESSAGE");					
+			char *err=0;
+			int err_len=0;
+			append_printf(&err,&err_len,"Failed to post message to: %s [%s]",chan_name,g_last_http_error);
+			post_msg_to_irc(chan_name,"ERROR",err);
+			post_irc_server_msg("ERROR: %s",err);
+			free(err);
 		}
 	}else{
 		post_irc_server_msg("ERROR unable to find channel %s",chan_name);
@@ -1807,7 +1810,6 @@ static int process_chan_msg(DISCORD_CMD *cmd,const char *uname)
 				break;
 			}
 		}
-		printf("CHAN MSG:%s\n",irc_chan);
 		post_msg_to_irc(irc_chan,nick,content);
 	}
 EXIT_CHAN_MSG:
