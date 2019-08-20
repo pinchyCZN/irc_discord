@@ -1022,7 +1022,7 @@ static get_me_user_name(CONNECTION *c,char *uname,int uname_len)
 	}
 	return result;
 }
-
+//position: -1=before,0=around,1=after
 static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,unsigned int limit,int position,const char *pos_id,int pinned)
 {
 	int result=FALSE;
@@ -1817,19 +1817,30 @@ EXIT_CHAN_MSG:
 	return result;
 }
 
-//get the message that is closest less than given time
-static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int *position,const char **msg_id)
+//get the message that is closest to the given time
+static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int direction,const char **msg_id)
 {
 	int result=FALSE;
 	int i,count;
 	int found=-1;
 	count=mlist->count;
-	for(i=0;i<count;i++){
-		MESSAGE *m=&mlist->m[i];
-		if(ftime > m->ftime){
-			found=i;
-		}else{
-			break;
+	if(direction>=0){ //after,around
+		for(i=0;i<count;i++){ //low to high
+			MESSAGE *m=&mlist->m[i];
+			if(ftime >= m->ftime){
+				found=i;
+			}else{
+				break;
+			}
+		}
+	}else{
+		for(i=count-1;i>=0;i--){ //high to low
+			MESSAGE *m=&mlist->m[i];
+			if(ftime <= m->ftime){
+				found=i;
+			}else{
+				break;
+			}
 		}
 	}
 	if(found>=0){
@@ -1838,26 +1849,61 @@ static int get_nearest_message_id(MESSAGE_LIST *mlist,__int64 ftime,int *positio
 	}else{
 		if(count){
 			MESSAGE *start_msg,*end_msg;
-			int dir=*position;
 			start_msg=&mlist->m[0];
 			end_msg=&mlist->m[mlist->count-1];
 			if(start_msg->ftime > ftime){
-				//we are below the lowest
-				*msg_id=start_msg->id;
-				//if(dir>0)
-				//	*position=0;
-				result=TRUE;
+				if(direction<=0){
+					//time is below the lowest
+					*msg_id=start_msg->id;
+					result=TRUE;
+				}
 			}else if(end_msg->ftime < ftime){
-				//we are above the highest
-				*msg_id=end_msg->id;
-				//if(dir<0)
-				//	*position=0; //around
-				result=TRUE;
+				if(direction>=0){
+					//time is above the highest
+					*msg_id=end_msg->id;
+					result=TRUE;
+				}
 			}else if(start_msg->ftime == ftime){
 				*msg_id=start_msg->id;
 				result=TRUE;
 			}else if(end_msg->ftime == ftime){
 				*msg_id=end_msg->id;
+				result=TRUE;
+			}
+		}
+	}
+	return result;
+}
+
+//check if the msg_id is in our list, if we have enuf in the range and copy to out
+int have_msg_range(MESSAGE_LIST *mlist,const char *msg_id,int direction,int range,MESSAGE_LIST *out)
+{
+	int result=FALSE;
+	int i,count;
+	int index=-1;
+	if(0==msg_id)
+		return result;
+	count=mlist->count;
+	for(i=0;i<count;i++){
+		MESSAGE *m=&mlist->m[i];
+		if(0==stricmp(m->id,msg_id)){
+			index=i;
+			break;
+		}
+	}
+	if(index>=0){
+		if(direction<0){
+			index-=range-1;
+		}else if(0==direction){
+			index-=range/2;
+		}else{
+			index=index+1;
+		}
+		if(index>=0 && (index+range)<=count){
+			for(i=0;i<range;i++){
+				int mindex=i+index;
+				MESSAGE *m=&mlist->m[mindex];
+				add_message(out,m);
 				result=TRUE;
 			}
 		}
@@ -1875,9 +1921,6 @@ static int binsearch_compare_message(const void *arg1,const void *arg2)
 	if(a->ftime < b->ftime)
 		result=-1;
 	else if(a->ftime == b->ftime){
-		//int res;
-		//res=strcmpi(a->id,b->id);
-		//result=res;
 		result=0;
 	}
 	return result;
@@ -1887,8 +1930,8 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 {
 	char chan_name[160]={0};
 	const char *str;
-	//around=1,before=2,after=3,limit params from msg ID
-	int position=0;
+	//before=-1,around=0,after=1,limit params from msg ID
+	int direction=0; //around
 	int limit=100;
 	CHANNEL *chan=0;
 	const char *msg_id=0;
@@ -1911,9 +1954,9 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 		unsigned char a=str[0];
 		if(isalpha(a)){
 			if(startswithi(str,"before"))
-				position=-1;
+				direction=-1;
 			else if(startswithi(str,"after"))
-				position=1;
+				direction=1;
 			else if(startswithi(str,"pin"))
 				get_pinned=TRUE;
 			else if(startswithi(str,"info")){
@@ -1939,7 +1982,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(strchr(str,'-') || val>=2000){
 					__int64 ftime=0;
 					time_str_to_ftime(str,&ftime);
-					get_nearest_message_id(&chan->msgs,ftime,&position,&msg_id);
+					get_nearest_message_id(&chan->msgs,ftime,direction,&msg_id);
 				}else{
 					limit=atoi(str);
 				}
@@ -1947,18 +1990,28 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(chan->msgs.count)
 					msg_id=chan->msgs.m[chan->msgs.count-1].id;
 			}
+			str=seek_next_word(str);
+			if(str){
+				a=str[0];
+				if(isdigit(a)){
+					limit=atoi(str);
+				}
+			}
 		}else{
 			__int64 ftime;
 			ftime=get_current_ftime();
-			get_nearest_message_id(&chan->msgs,ftime,&position,&msg_id);
+			get_nearest_message_id(&chan->msgs,ftime,direction,&msg_id);
 		}
 	}
 	if(get_pinned){
 		push_irc_msgs(&chan->pin_msgs,0,chan->pin_msgs.count,chan_name,"PINNED: ",TRUE);
 		return;
 	}
-	printf(">>>calling params: limit:%i position:%i msg_id:%s\n",limit,position,msg_id);
-	get_messages(conn,&mlist,chan->id,limit,position,msg_id,FALSE);
+	sort_messages(&chan->msgs);
+	if(!have_msg_range(&chan->msgs,msg_id,direction,limit,&mlist)){
+		printf(">>>calling get messages params: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
+		get_messages(conn,&mlist,chan->id,limit,direction,msg_id,FALSE);
+	}
 	sort_messages(&mlist);
 	printf(">>message count:%i\n",mlist.count);
 	if(0==mlist.count){
