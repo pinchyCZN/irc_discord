@@ -203,18 +203,18 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 	case CHAN_MSG:
 		if(data){
 			char chan[160]={0};
-			char nick[80]={0};
+			char msg_nick[80]={0};
 			const char *msg=0;
 			const char *ptr=data;
 			//chan,nick,content
 			get_word(ptr,chan,sizeof(chan));
 			ptr=seek_next_word(ptr);
-			get_word(ptr,nick,sizeof(nick));
+			get_word(ptr,msg_nick,sizeof(msg_nick));
 			ptr=seek_next_word(ptr);
 			msg=ptr;
-			if(chan[0] && nick[0] && msg){
+			if(chan[0] && msg_nick[0] && msg){
 				//:chopchop1!~chopchop1@my.server.name PRIVMSG #test123 :asdfsadf
-				__snprintf(tmp,sizeof(tmp),":%s!~uname@discord.server PRIVMSG %s :%s\r\n",nick,chan,msg);
+				__snprintf(tmp,sizeof(tmp),":%s!~uname@discord.server PRIVMSG %s :%s\r\n",msg_nick,chan,msg);
 			}
 		}
 		break;
@@ -230,6 +230,17 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 			topic=seek_next_word(ptr);
 			if(topic && topic[0]!=0)
 				__snprintf(tmp,sizeof(tmp),":discord.server 332 nick %s :%s\r\n",chan,topic);
+		}
+		break;
+	case PRIV_MSG:
+		{
+			char msg_nick[80]={0};
+			const char *ptr=data;
+			//nick,msg
+			get_word(ptr,msg_nick,sizeof(msg_nick));
+			ptr=seek_next_word(ptr);
+			if(msg_nick[0] && ptr)
+				__snprintf(tmp,sizeof(tmp),":%s!~uname@discord.server PRIVMSG %s :%s\r\n",msg_nick,nick,ptr);
 		}
 		break;
 	case SERVER_INFO:
@@ -360,7 +371,8 @@ static int handle_connection(SOCKET s)
 			if(res<=0){
 				break;
 			}
-			printf("RECV:%s",line);
+			trim_right(line);
+			printf("RECV:%s\n",line);
 			switch(state){
 			case 0:
 				if(startswithi(line,"USER ")){

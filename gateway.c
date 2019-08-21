@@ -378,9 +378,11 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 					const char *content;
 					const char *uname;
 					const char *chan_id;
+					const char *guild_id;
 					content=json_object_dotget_string(obj,"d.content");
 					uname=json_object_dotget_string(obj,"d.author.username");
 					chan_id=json_object_dotget_string(obj,"d.channel_id");
+					guild_id=json_object_dotget_string(obj,"d.guild_id");
 					if(content && uname && chan_id){
 						char *tmp;
 						int tmp_len;
@@ -393,7 +395,11 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 								fix_spaced_str(tmp_uname);
 								//chan id, username, content
 								__snprintf(tmp,tmp_len,"%s %s %s",chan_id,tmp_uname,content);
-								add_discord_cmd(CMD_CHAN_MSG,tmp);
+								//if not guild ID then direct message
+								if(0==guild_id)
+									add_discord_cmd(CMD_DIRECT_MSG,tmp);
+								else
+									add_discord_cmd(CMD_CHAN_MSG,tmp);
 								free(tmp_uname);
 							}
 							free(tmp);

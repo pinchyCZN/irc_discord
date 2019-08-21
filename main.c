@@ -1553,6 +1553,7 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 	int i;
 	SYSTEMTIME time={0};
 	int time_init=FALSE;
+	int msg_counter=0;
 	for(i=start_index;i<end_index;i++){
 		MESSAGE *m;
 		const char *nick;
@@ -1568,9 +1569,13 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 				time_str_to_systime(m->timestamp,&time);
 				time_init=TRUE;
 			}
-			if(i==start_index || i==(end_index-1)){
+			if(i==start_index){
 				post_time=TRUE;
-			}else{
+			}else if(i==(end_index-1)){
+				if(msg_counter>15)
+					post_time=TRUE;
+			}
+			{
 				SYSTEMTIME tmp_time={0};
 				time_str_to_systime(m->timestamp,&tmp_time);
 				if(tmp_time.wDay!=time.wDay){
@@ -1582,6 +1587,7 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 				char tmp[80]={0};
 				__snprintf(tmp,sizeof(tmp),"%.19s",m->timestamp);
 				post_msg_to_irc(irc_chan,"--------",tmp);
+				msg_counter=0;
 			}
 		}
 		if(m->msg && m->msg[0])
@@ -1591,6 +1597,7 @@ static void push_irc_msgs(MESSAGE_LIST *mlist,int start_index,int end_index,cons
 		if(msg){
 			post_msg_to_irc(irc_chan,nick,msg);
 			free(msg);
+			msg_counter++;
 		}
 	}
 }
@@ -1893,7 +1900,7 @@ int have_msg_range(MESSAGE_LIST *mlist,const char *msg_id,int direction,int rang
 	}
 	if(index>=0){
 		if(direction<0){
-			index-=range-1;
+			index-=range;
 		}else if(0==direction){
 			index-=range/2;
 		}else{
@@ -1924,6 +1931,32 @@ static int binsearch_compare_message(const void *arg1,const void *arg2)
 		result=0;
 	}
 	return result;
+}
+
+static void add_generic_msg(MESSAGE_LIST *mlist,char *author,const char *fmt,...)
+{
+	int len;
+	va_list ap;
+	char *tmp=0;
+	int tmp_len=0;
+	MESSAGE msg={0};
+	va_start(ap,fmt);
+	len=_vsnprintf(0,0,fmt,ap);
+	if(len<=0)
+		return;
+	tmp_len=len+1;
+	tmp=calloc(tmp_len,1);
+	if(0==tmp)
+		return;
+	_vsnprintf(tmp,tmp_len,fmt,ap);
+	tmp[tmp_len-1]=0;
+	msg.author=author;
+	msg.auth_id="";
+	msg.id="";
+	msg.timestamp="2000-01-01";
+	msg.msg=tmp;
+	add_message(mlist,&msg);
+	free(tmp);
 }
 
 static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
@@ -1972,6 +2005,32 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 					free(tmp);
 				}
 				return;
+			}else if(startswithi(str,"find")){
+				int i,count;
+				int found=0;
+				MESSAGE_LIST *ml;
+				str=seek_next_word(str);
+				if(0==str)
+					return;
+				if(strlen(str)<2)
+					return;
+				ml=&chan->msgs;
+				count=ml->count;
+				for(i=0;i<count;i++){
+					MESSAGE *m=&ml->m[i];
+					if(strstri(m->msg,str)){
+						found++;
+						if(found>20)
+							break;
+						add_generic_msg(&mlist,"=======","%s",m->timestamp);
+						add_message(&mlist,m);
+					}
+				}
+				if(found){
+					push_irc_msgs(&mlist,0,mlist.count,chan_name,"",0);
+				}
+				remove_all_msg(&mlist);
+				return;
 			}
 			str=seek_next_word(str);
 		}
@@ -2008,21 +2067,24 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 		return;
 	}
 	sort_messages(&chan->msgs);
-	if(!have_msg_range(&chan->msgs,msg_id,direction,limit,&mlist)){
+	if(have_msg_range(&chan->msgs,msg_id,direction,limit,&mlist)){
+		printf(">>>have messages in range: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
+	}else{
 		printf(">>>calling get messages params: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
 		get_messages(conn,&mlist,chan->id,limit,direction,msg_id,FALSE);
 	}
-	sort_messages(&mlist);
 	printf(">>message count:%i\n",mlist.count);
 	if(0==mlist.count){
 		if(g_last_http_error){
 			post_msg_to_irc(chan_name,"MSGINFO",g_last_http_error);
 			post_irc_server_msg("ERROR:%s",g_last_http_error);
-			return;
 		}
+		return;
 	}
+	sort_messages(&mlist);
 	{
 		int i,count;
+		post_msg_to_irc(chan_name,"MSG_BLOCK_BEGIN","<============================>");
 		count=mlist.count;
 		for(i=0;i<count;i++){
 			MESSAGE *m;
@@ -2038,7 +2100,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				sort_messages(&chan->msgs);
 			}
 		}
-		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",1);
+		push_irc_msgs(&mlist,0,mlist.count,chan_name,"",TRUE);
 		merge_new_nicks(&chan->nicks,&mlist);
 		remove_all_msg(&mlist);
 		push_irc_nick_list(&chan->nicks,chan_name);
@@ -2061,6 +2123,21 @@ static void process_get_names(DISCORD_CMD *cmd)
 		return;
 	}
 	push_irc_nick_list(&chan->nicks,irc_chan);
+}
+
+static void process_direct_msg(DISCORD_CMD *cmd)
+{
+	const char *str,*msg;
+	char nick[40]={0};
+	str=seek_next_word(cmd->data);
+	if(0==str)
+		return;
+	get_word(str,nick,sizeof(nick));
+	msg=seek_next_word(str);
+	if(0==msg)
+		return;
+	printf("direct msg:%s\n",str);
+	post_msg_to_irc("DM",nick,msg);
 }
 
 #include "test_main.h"
@@ -2104,6 +2181,9 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_CHAN_MSG:
 					process_chan_msg(&cmd,uname);
+					break;
+				case CMD_DIRECT_MSG:
+					process_direct_msg(&cmd);
 					break;
 				case CMD_GET_NAMES:
 					process_get_names(&cmd);
