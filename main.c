@@ -54,8 +54,19 @@ typedef struct{
 	GUILD *guild;
 	int count;
 }GUILD_LIST;
+typedef struct{
+	char *id;
+	char *username;
+	char *userid;
+	MESSAGE_LIST msgs;
+}DM_CHAN;
+typedef struct{
+	DM_CHAN *dm_chan;
+	int count;
+}DM_LIST;
 
 static GUILD_LIST g_guild_list={0};
+static DM_LIST g_dm_list={0};
 
 static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
@@ -1195,6 +1206,76 @@ static int get_all_channels(CONNECTION *c,GUILD_LIST *glist)
 	}
 	return result;
 }
+static int get_all_dm_channels(CONNECTION *c,DM_LIST *dlist)
+{
+	int result=FALSE;
+	char *data=0;
+	int data_len=0;
+	append_printf(&data,&data_len,"GET /api/v6/users/@me/channels HTTP/1.1\r\n");
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n\r\n",g_token);
+	if(data){
+		char *content=0;
+		int content_len=0;
+		int res;
+		g_enable_dbgprint=TRUE;
+		res=do_http_req(c,data,&content,&content_len);
+		g_enable_dbgprint=FALSE;
+		if(res){
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONArray){
+				JSON_Array *chans;
+				int i,count;
+				chans=json_value_get_array(root);
+				count=json_array_get_count(chans);
+				for(i=0;i<count;i++){
+					JSON_Object *chan;
+					double x;
+					/*
+					[
+					{
+					"last_message_id": "416724133745786881",
+					"type": 1,
+					"id": "416724132668112896",
+					"recipients": [
+					{
+					"username": "t4knuk3",
+					"discriminator": "5670",
+					"id": "411912221535502336",
+					"avatar": "fb992342da101058843d6193f86c7f83"
+					}
+					]
+					},
+					{
+					*/
+					chan=json_array_get_object(chans,i);
+					x=json_object_get_number(chan,"type");
+					if(1==x){ //DM channels only
+						char *id;
+						id=strdup(json_object_get_string(chan,"id"));
+						if(id){
+
+						}
+						free(id);
+					}
+				}
+			}
+			json_value_free(root);
+			result=TRUE;
+		}else{
+			printf("failed to get response\n");
+		}
+		if(content){
+			free(content);
+		}
+		free(data);
+	}
+	return result;
+}
 static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 {
 	int result=FALSE;
@@ -1530,6 +1611,31 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 		}
 		//CHAN_MSG chan,nick,msg
 		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %.*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
+		push_irc_msg(irc_msg);
+	}
+}
+
+static void post_priv_msg_to_irc(const char *nick,const char *msg)
+{
+	int i,msg_len;
+	const int block_size=350;
+	if(0==msg)
+		return;
+	msg_len=strlen(msg);
+	for(i=0;i<msg_len;i+=block_size){
+		char irc_msg[512]={0};
+		const char *chunk;
+		int chunk_len;
+		chunk=msg+i;
+		chunk_len=msg_len-i;
+		if(chunk_len>block_size){
+			chunk_len=block_size;
+		}
+		if(chunk_len<=0){
+			break;
+		}
+		//nick,msg
+		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %.*s",get_irc_msg_str(PRIV_MSG),nick,chunk_len,chunk);
 		push_irc_msg(irc_msg);
 	}
 }
@@ -2136,8 +2242,7 @@ static void process_direct_msg(DISCORD_CMD *cmd)
 	msg=seek_next_word(str);
 	if(0==msg)
 		return;
-	printf("direct msg:%s\n",str);
-	post_msg_to_irc("DM",nick,msg);
+	post_priv_msg_to_irc(nick,msg);
 }
 
 #include "test_main.h"
@@ -2231,6 +2336,7 @@ static void discord_thread(void *args)
 		DISC_CONNECT=0,
 		DISC_GET_GUILDS,
 		DISC_GET_CHANNELS,
+		DISC_GET_DM_CHANNELS,
 		DISC_GET_MESSAGES,
 		DISC_GET_GATEWAY,
 		DISC_WAIT_CMD,
@@ -2264,10 +2370,10 @@ static void discord_thread(void *args)
 		case DISC_GET_CHANNELS:
 			get_all_channels(&con,&g_guild_list);
 			dump_guild_stuff(&g_guild_list);
-			state=DISC_GET_MESSAGES;
+			state=DISC_GET_DM_CHANNELS;
 			break;
-		case DISC_GET_MESSAGES:
-			//get_all_messages(&con,&g_guild_list);
+		case DISC_GET_DM_CHANNELS:
+			get_all_dm_channels(&con,&g_dm_list);
 			state=DISC_GET_GATEWAY;
 			break;
 		case DISC_GET_GATEWAY:
