@@ -6,6 +6,8 @@
 #include "parson.h"
 #include "discord.h"
 
+#pragma warning(disable:4996)
+
 static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
 static int g_disable_dbgprint=FALSE;
@@ -400,16 +402,36 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 						}
 					}
 				}else if(0==strcmp(cmd,"CHANNEL_CREATE")){
-					/*
-					{"t":"CHANNEL_CREATE","s":2,"op":0,"d":{"type":1,"recipients":[{"username":"mr t
-					est name","id":"612016992551043072","discriminator":"1808","avatar":null}],"last
-					_message_id":"613899216766631969","id":"613895099201486848"}}
-					*/
-					printf("process payload:\n%.*s\n",data_len,data);
+					int type;
+					type=(int)json_object_dotget_number(obj,"d.type");
+					if(1==type){ //DM type
+						JSON_Array *recips;
+						recips=json_object_dotget_array(obj,"d.recipients");
+						if(recips){
+							int recip_count;
+							recip_count=json_array_get_count(recips);
+							if(recip_count){
+								JSON_Object *recip;
+								recip=json_array_get_object(recips,0);
+								if(recip){
+									char *uname,*uname_id,*chan_id;
+									uname=strdup(json_object_get_string(recip,"username"));
+									uname_id=strdup(json_object_get_string(recip,"id"));
+									chan_id=strdup(json_object_dotget_string(obj,"d.id"));
+									if(uname && uname_id && chan_id){
+										char *tmp=0;
+										int tmp_len=0;
+										fix_spaced_str(uname);
+										append_printf(&tmp,&tmp_len,"%s %s %s",chan_id,uname,uname_id);
+										add_discord_cmd(CMD_CREATE_CHAN,tmp);
+										free(tmp);
+									}
+								}
+							}
+						}
+					}
 				}
 			}
-			//DBGPRINT("disc op 0\n");
-
 		}
 		break;
 	case 9: //session invalidated
