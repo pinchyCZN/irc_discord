@@ -56,8 +56,8 @@ typedef struct{
 }GUILD_LIST;
 typedef struct{
 	char *id;
-	char *username;
-	char *userid;
+	char *recipient;
+	char *recipient_id;
 	MESSAGE_LIST msgs;
 }DM_CHAN;
 typedef struct{
@@ -149,7 +149,23 @@ static int remove_all_guilds(GUILD_LIST *glist)
 	glist->count=0;
 	return TRUE;
 }
-
+static int remove_all_dm_chans(DM_LIST *dlist)
+{
+	int i,count;
+	count=dlist->count;
+	for(i=0;i<count;i++){
+		DM_CHAN *tmp;
+		tmp=&dlist->dm_chan[i];
+		remove_all_msg(&tmp->msgs);
+		free(tmp->recipient);
+		free(tmp->recipient_id);
+		free(tmp->id);
+	}
+	free(dlist->dm_chan);
+	dlist->dm_chan=0;
+	dlist->count=0;
+	return TRUE;
+}
 static int add_guild(GUILD_LIST *glist,GUILD *g)
 {
 	int result=FALSE;
@@ -219,6 +235,42 @@ static int add_channel(CHANNEL_LIST *clist,CHANNEL *chan)
 ERROR_ADD_CHAN:
 	if(!result){
 		free(name);free(topic);free(id);
+	}
+	return result;
+}
+static int add_dm_chan(DM_LIST *dlist,DM_CHAN *chan)
+{
+	int result=FALSE;
+	int count,index;
+	DM_CHAN *ptr;
+	int size;
+	char *recipient,*recipient_id,*id;
+	recipient=strdup(chan->recipient);
+	recipient_id=strdup(chan->recipient_id);
+	id=strdup(chan->id);
+	if(0==recipient || 0==recipient_id || 0==id){
+		goto ERROR_ADD_CHAN;
+	}
+	count=dlist->count;
+	index=count;
+	count++;
+	size=sizeof(DM_CHAN)*count;
+	ptr=realloc(dlist->dm_chan,size);
+	if(ptr){
+		DM_CHAN *tmp;
+		tmp=&ptr[index];
+		memset(tmp,0,sizeof(DM_CHAN));
+		memcpy(&tmp->msgs,&chan->msgs,sizeof(tmp->msgs));
+		tmp->id=id;
+		tmp->recipient=recipient;
+		tmp->recipient_id=recipient_id;
+		dlist->dm_chan=ptr;
+		dlist->count=count;
+		result=TRUE;
+	}
+ERROR_ADD_CHAN:
+	if(!result){
+		free(recipient);free(recipient_id);free(id);
 	}
 	return result;
 }
@@ -1211,6 +1263,7 @@ static int get_all_dm_channels(CONNECTION *c,DM_LIST *dlist)
 	int result=FALSE;
 	char *data=0;
 	int data_len=0;
+	remove_all_dm_chans(dlist);
 	append_printf(&data,&data_len,"GET /api/v6/users/@me/channels HTTP/1.1\r\n");
 	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
 	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
@@ -1221,9 +1274,7 @@ static int get_all_dm_channels(CONNECTION *c,DM_LIST *dlist)
 		char *content=0;
 		int content_len=0;
 		int res;
-		g_enable_dbgprint=TRUE;
 		res=do_http_req(c,data,&content,&content_len);
-		g_enable_dbgprint=FALSE;
 		if(res){
 			JSON_Value *root;
 			root=json_parse_string(content);
@@ -1235,29 +1286,36 @@ static int get_all_dm_channels(CONNECTION *c,DM_LIST *dlist)
 				for(i=0;i<count;i++){
 					JSON_Object *chan;
 					double x;
-					/*
-					[
-					{
-					"last_message_id": "416724133745786881",
-					"type": 1,
-					"id": "416724132668112896",
-					"recipients": [
-					{
-					"username": "t4knuk3",
-					"discriminator": "5670",
-					"id": "411912221535502336",
-					"avatar": "fb992342da101058843d6193f86c7f83"
-					}
-					]
-					},
-					{
-					*/
 					chan=json_array_get_object(chans,i);
 					x=json_object_get_number(chan,"type");
 					if(1==x){ //DM channels only
 						char *id;
 						id=strdup(json_object_get_string(chan,"id"));
 						if(id){
+							JSON_Array *recips;
+							recips=json_object_get_array(chan,"recipients");
+							if(recips){
+								int recip_count;
+								recip_count=json_array_get_count(recips);
+								if(recip_count){
+									JSON_Object *recip;
+									recip=json_array_get_object(recips,0);
+									if(recip){
+										char *uname,*uname_id;
+										uname=strdup(json_object_get_string(recip,"username"));
+										uname_id=strdup(json_object_get_string(recip,"id"));
+										if(uname && uname_id){
+											DM_CHAN dm_chan={0};
+											fix_spaced_str(uname);
+											dm_chan.id=id;
+											dm_chan.recipient=uname;
+											dm_chan.recipient_id=uname_id;
+											add_dm_chan(dlist,&dm_chan);
+										}
+										free(uname);free(uname_id);
+									}
+								}
+							}
 
 						}
 						free(id);
@@ -1758,6 +1816,22 @@ static int get_channel_obj_from_irc_chan(const char *irc_chan,CHANNEL **chan_obj
 	}
 	return result;
 }
+static int get_dm_chan_from_uname(const char *uname,DM_CHAN **dm_chan_obj)
+{
+	int result=FALSE;
+	int i,count;
+	count=g_dm_list.count;
+	for(i=0;i<count;i++){
+		DM_CHAN *tmp;
+		tmp=&g_dm_list.dm_chan[i];
+		if(0==stricmp(tmp->recipient,uname)){
+			result=TRUE;
+			*dm_chan_obj=tmp;
+			break;
+		}
+	}
+	return result;
+}
 
 static int process_join_chan(DISCORD_CMD *cmd)
 {
@@ -1801,35 +1875,51 @@ static int process_list_chan(CONNECTION *conn,DISCORD_CMD *cmd)
 	int result=FALSE;
 	int i,count;
 	char tmp[256]={0};
+	int list_dm_chans=FALSE;
 	if(cmd->data){
 		unsigned char a=cmd->data[0];
 		if(a && (!isspace(a))){
-			get_guilds(conn,&g_guild_list);
-			get_all_channels(conn,&g_guild_list);
+			a=tolower(a);
+			if('p'==a || 'd'==a){
+				get_all_dm_channels(conn,&g_dm_list);
+				list_dm_chans=TRUE;
+			}else{
+				get_guilds(conn,&g_guild_list);
+				get_all_channels(conn,&g_guild_list);
+			}
 		}
 	}
-	_snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(START_CHAN_LIST));
-	push_irc_msg(tmp);
-	count=g_guild_list.count;
-	for(i=0;i<count;i++){
-		int j;
-		int chan_count;
-		GUILD *guild;
-		guild=&g_guild_list.guild[i];
-		chan_count=guild->channels.count;
-		for(j=0;j<chan_count;j++){
-			CHANNEL *chan;
-			const char *prefix;
-			char irc_chan[160]={0};
-			chan=&guild->channels.chan[j];
-			prefix=get_irc_msg_str(CHAN_LIST);
-			print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
-			__snprintf(tmp,sizeof(tmp),"%s %s %i :%s",prefix,irc_chan,chan->nicks.nick_count,chan->topic);
-			push_irc_msg(tmp);
+	if(list_dm_chans){
+		count=g_dm_list.count;
+		for(i=0;i<count;i++){
+			DM_CHAN *dm_chan=&g_dm_list.dm_chan[i];
+			post_irc_server_msg("DM: %s id: %s chanid: %s",dm_chan->recipient,dm_chan->recipient_id,dm_chan->id);
+			result=TRUE;
 		}
+	}else{
+		_snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(START_CHAN_LIST));
+		push_irc_msg(tmp);
+		count=g_guild_list.count;
+		for(i=0;i<count;i++){
+			int j;
+			int chan_count;
+			GUILD *guild;
+			guild=&g_guild_list.guild[i];
+			chan_count=guild->channels.count;
+			for(j=0;j<chan_count;j++){
+				CHANNEL *chan;
+				const char *prefix;
+				char irc_chan[160]={0};
+				chan=&guild->channels.chan[j];
+				prefix=get_irc_msg_str(CHAN_LIST);
+				print_irc_chan(guild->name,chan->name,irc_chan,sizeof(irc_chan));
+				__snprintf(tmp,sizeof(tmp),"%s %s %i :%s",prefix,irc_chan,chan->nicks.nick_count,chan->topic);
+				push_irc_msg(tmp);
+			}
+		}
+		__snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(END_CHAN_LIST));
+		push_irc_msg(tmp);
 	}
-	__snprintf(tmp,sizeof(tmp),"%s",get_irc_msg_str(END_CHAN_LIST));
-	push_irc_msg(tmp);
 	return result;
 }
 
@@ -1869,7 +1959,31 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 			free(err);
 		}
 	}else{
-		post_irc_server_msg("ERROR unable to find channel %s",chan_name);
+		DM_CHAN *dm_chan=0;
+		result=get_dm_chan_from_uname(chan_name,&dm_chan);
+		if(result){
+			char *tmp;
+			result=FALSE;
+			if(':'==chan_msg[0]){
+				chan_msg++;
+			}
+			tmp=strdup(chan_msg);
+			if(tmp){
+				trim_right(tmp);
+				result=post_message(c,dm_chan->id,tmp);
+				free(tmp);
+			}
+			if(!result){
+				char *err=0;
+				int err_len=0;
+				append_printf(&err,&err_len,"Failed to post message to: %s [%s]",chan_name,g_last_http_error);
+				post_msg_to_irc(chan_name,"ERROR",err);
+				post_irc_server_msg("ERROR: %s",err);
+				free(err);
+			}
+		}else{
+			post_irc_server_msg("ERROR unable to find channel %s",chan_name);
+		}
 	}
 	return result;
 }
@@ -1916,6 +2030,7 @@ static int process_chan_msg(DISCORD_CMD *cmd,const char *uname)
 				chan=&g->channels.chan[j];
 				if(0==stricmp(chan->id,chan_id)){
 					print_irc_chan(g->name,chan->name,irc_chan,sizeof(irc_chan));
+					result=TRUE;
 					break;
 				}
 			}
@@ -1924,6 +2039,20 @@ static int process_chan_msg(DISCORD_CMD *cmd,const char *uname)
 			}
 		}
 		post_msg_to_irc(irc_chan,nick,content);
+	}
+	if(!result){
+		int i,count;
+		count=g_dm_list.count;
+		for(i=0;i<count;i++){
+			DM_CHAN *dm_chan=&g_dm_list.dm_chan[i];
+			if(0==stricmp(dm_chan->id,chan_id)){
+				result=TRUE;
+				break;
+			}
+		}
+		if(result){
+			post_priv_msg_to_irc(nick,content);
+		}
 	}
 EXIT_CHAN_MSG:
 	free(content);
@@ -2231,20 +2360,6 @@ static void process_get_names(DISCORD_CMD *cmd)
 	push_irc_nick_list(&chan->nicks,irc_chan);
 }
 
-static void process_direct_msg(DISCORD_CMD *cmd)
-{
-	const char *str,*msg;
-	char nick[40]={0};
-	str=seek_next_word(cmd->data);
-	if(0==str)
-		return;
-	get_word(str,nick,sizeof(nick));
-	msg=seek_next_word(str);
-	if(0==msg)
-		return;
-	post_priv_msg_to_irc(nick,msg);
-}
-
 #include "test_main.h"
 
 static int process_requests(CONNECTION *c,const char *uname)
@@ -2286,9 +2401,6 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_CHAN_MSG:
 					process_chan_msg(&cmd,uname);
-					break;
-				case CMD_DIRECT_MSG:
-					process_direct_msg(&cmd);
 					break;
 				case CMD_GET_NAMES:
 					process_get_names(&cmd);

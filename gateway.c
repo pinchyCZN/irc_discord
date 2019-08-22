@@ -399,6 +399,13 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 							free(tmp);
 						}
 					}
+				}else if(0==strcmp(cmd,"CHANNEL_CREATE")){
+					/*
+					{"t":"CHANNEL_CREATE","s":2,"op":0,"d":{"type":1,"recipients":[{"username":"mr t
+					est name","id":"612016992551043072","discriminator":"1808","avatar":null}],"last
+					_message_id":"613899216766631969","id":"613895099201486848"}}
+					*/
+					printf("process payload:\n%.*s\n",data_len,data);
 				}
 			}
 			//DBGPRINT("disc op 0\n");
