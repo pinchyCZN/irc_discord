@@ -429,6 +429,11 @@ static int handle_connection(SOCKET s)
 					}else if(startswithi(cmd,"QUIT")){
 						cmd_valid=TRUE;
 						state=99;
+					}else if(startswithi(cmd,"PONG") || startswithi(cmd,"PING")){
+						char tmp[80];
+						__snprintf(tmp,sizeof(tmp),":discord.server 999 info :ACK %s\r\n",cmd);
+						net_send_str(s,tmp);
+						cmd_valid=TRUE;
 					}
 					if(!cmd_valid){
 						_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);

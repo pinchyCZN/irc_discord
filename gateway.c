@@ -11,10 +11,6 @@
 static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
 static int g_disable_dbgprint=FALSE;
-enum{
-	GW_LOGIN=0,
-	GW_WAIT,
-};
 
 static void DBGPRINT(const char *fmt,...)
 {
@@ -465,7 +461,7 @@ static int send_pong(ssl_context *ssl,BYTE *data,int data_len)
 	return result;
 }
 
-static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *state,int *error_count,int *seq_num)
+static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int *error_count,int *seq_num)
 {
 	int result=FALSE;
 	int res;
@@ -504,9 +500,7 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 		case 8: // close
 			DBGPRINT("gateway close\n");
 			SetEvent(g_gwevent);
-			*state=GW_LOGIN;
 			*exit_ws=TRUE;
-			Sleep(500000);
 			break;
 		case 9: // ping
 			DBGPRINT("gateway sending pong\n");
@@ -528,7 +522,7 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 void gateway_thread(void *args)
 {
 	CONNECTION con={0};
-	int state=0;
+	DWORD wait_time=INFINITE;
 	if(NULL==g_gwevent){
 		g_gwevent=CreateEventA(NULL,FALSE,FALSE,"GatewayEvent");
 		if(NULL==g_gwevent){
@@ -539,55 +533,53 @@ void gateway_thread(void *args)
 	while(1){
 		DWORD res;
 		DBGPRINT("waiting for gateway event\n");
-		res=WaitForSingleObject(g_gwevent,INFINITE);
-		if(WAIT_OBJECT_0==res){
-			switch(state){
-			case GW_LOGIN:
-				if(0==g_gateway[0] && FALSE){
-					DBGPRINT("no gateway\n");
-					break;
-				}else{
-					DBGPRINT("gateway login\n");
-					res=login_gateway(&con);
-					if(res){
-						BYTE *payload=0;
-						int payload_size=0;
-						int exit_ws=FALSE;
-						int error_count=0;
-						int seq_num=0;
-						DWORD tick;
-						tick=GetTickCount();
-						con.ssl.read_timeout=2;
-						while(1){
-							process_ws(&con,&payload,&payload_size,&exit_ws,&state,&error_count,&seq_num);
-							if(!exit_ws){
-								DWORD delta;
-								delta=GetTickCount()-tick;
-								if(delta>=g_hbeat_interval){
-									res=send_heartbeat(&con.ssl,seq_num);
-									tick=GetTickCount();
-									if(!res)
-										exit_ws=TRUE;
-								}else{
-									Sleep(1000);
-								}
-							}
-							if(error_count>5){
-								DBGPRINT("error count exceeded\n");
-								break;
-							}
-							if(exit_ws){
-								DBGPRINT("exit ws\n");
-								break;
+		res=WaitForSingleObject(g_gwevent,wait_time);
+		wait_time=5000;
+		if(WAIT_OBJECT_0==res || WAIT_TIMEOUT==res){
+			if(0==g_gateway[0]){
+				DBGPRINT("no gateway\n");
+				continue;
+			}else{
+				DBGPRINT("gateway login\n");
+				res=login_gateway(&con);
+				if(res){
+					BYTE *payload=0;
+					int payload_size=0;
+					int exit_ws=FALSE;
+					int error_count=0;
+					int seq_num=0;
+					DWORD tick;
+					tick=GetTickCount();
+					con.ssl.read_timeout=2;
+					while(1){
+						process_ws(&con,&payload,&payload_size,&exit_ws,&error_count,&seq_num);
+						if(!exit_ws){
+							DWORD delta;
+							delta=GetTickCount()-tick;
+							if(delta>=g_hbeat_interval){
+								res=send_heartbeat(&con.ssl,seq_num);
+								tick=GetTickCount();
+								if(!res)
+									exit_ws=TRUE;
+							}else{
+								Sleep(1000);
 							}
 						}
-						close_connection(&con);
+						if(error_count>5){
+							DBGPRINT("error count exceeded\n");
+							break;
+						}
+						if(exit_ws){
+							DBGPRINT("exit ws\n");
+							break;
+						}
 					}
+					close_connection(&con);
 				}
-				break;
 			}
 		}else{
-			Sleep(1000);
+			printf("Wait error: exiting gateway\n");
+			break;
 		}
 	}
 }

@@ -2212,7 +2212,10 @@ static int process_chan_msg(DISCORD_CMD *cmd,const char *uname)
 				break;
 			}
 		}
-		post_msg_to_irc(irc_chan,nick,content);
+		if(result){
+			post_msg_to_irc(irc_chan,nick,content);
+			goto EXIT_CHAN_MSG;
+		}
 	}
 	if(!result){
 		int i,count;
