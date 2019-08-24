@@ -10,6 +10,8 @@
 
 static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
+static DWORD g_hb_tick_send=0;
+static DWORD g_hb_tick_ack=0;
 static int g_disable_dbgprint=FALSE;
 
 static void DBGPRINT(const char *fmt,...)
@@ -173,22 +175,20 @@ static int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 		case 0: //get header prefix
 			memset(header,0, sizeof(header));
 			res=recv_data(ssl,header,2);
-			if(res>0){
+			if(res){
 				header_size=get_header_size(header);
 				is_masked=(header[1] & 0x80) != 0;
 				offset=2;
 				state=1;
-			}else if(0==res){
-				*timeout=TRUE;
-				fail=TRUE;
 			}else{
+				*timeout=TRUE;
 				fail=TRUE;
 			}
 			break;
 		case 1: //get remaining header
 			if(header_size>offset){
 				res=recv_data(ssl,header+offset,header_size-offset);
-				if(res>0){
+				if(res){
 					offset+=res;
 					state=2;
 				}else{
@@ -442,6 +442,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		}
 		break;
 	case 11: //hrtbt ack
+		g_hb_tick_ack=GetTickCount();
 		//DBGPRINT("recv heartbeat\n");
 		break;
 	default:
@@ -541,6 +542,8 @@ void gateway_thread(void *args)
 				continue;
 			}else{
 				DBGPRINT("gateway login\n");
+				WSASetLastError(0);
+				g_hb_tick_ack=0;
 				res=login_gateway(&con);
 				if(res){
 					BYTE *payload=0;
@@ -557,12 +560,20 @@ void gateway_thread(void *args)
 							DWORD delta;
 							delta=GetTickCount()-tick;
 							if(delta>=g_hbeat_interval){
-								res=send_heartbeat(&con.ssl,seq_num);
 								tick=GetTickCount();
+								if(0==g_hb_tick_ack){
+									g_hb_tick_ack=tick;
+								}else{
+									delta=g_hb_tick_send-g_hb_tick_ack;
+									if(delta>g_hbeat_interval){
+										DBGPRINT("timeout ack of heartbeat\n");
+										exit_ws=TRUE;
+									}
+								}
+								g_hb_tick_send=tick;
+								res=send_heartbeat(&con.ssl,seq_num);
 								if(!res)
 									exit_ws=TRUE;
-							}else{
-								Sleep(1000);
 							}
 						}
 						if(error_count>5){
@@ -571,6 +582,10 @@ void gateway_thread(void *args)
 						}
 						if(exit_ws){
 							DBGPRINT("exit ws\n");
+							break;
+						}
+						if(WSAECONNRESET==WSAGetLastError()){
+							printf("ERROR: gateway connection reset\n");
 							break;
 						}
 					}

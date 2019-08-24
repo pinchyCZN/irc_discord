@@ -105,7 +105,7 @@ int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 			index+=res;
 
 		}else if(0==res){
-			Sleep(10);
+			Sleep(100);
 		}else{
 			break;
 		}
@@ -135,7 +135,7 @@ int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 	return result;
 }
 
-int recv_data(ssl_context *ssl,BYTE *data,int len)
+int recv_data(ssl_context *ssl,unsigned char *data,int len)
 {
 	int result=FALSE;
 	DWORD tick,delta;
@@ -156,7 +156,7 @@ int recv_data(ssl_context *ssl,BYTE *data,int len)
 				break;
 			}
 		}else if(0==res){
-			Sleep(10);
+			Sleep(100);
 		}else{
 			break;
 		}
@@ -168,7 +168,7 @@ int recv_data(ssl_context *ssl,BYTE *data,int len)
 	return result;
 }
 
-int send_data(ssl_context *ssl,BYTE *data,int len)
+int send_data(ssl_context *ssl,unsigned char *data,int len)
 {
 	int result=FALSE;
 	int offset=0;
@@ -189,6 +189,9 @@ int send_data(ssl_context *ssl,BYTE *data,int len)
 			printf("want write\n");
 			Sleep(10);
 		}else{
+			if(res<0){
+				WSASetLastError(WSAECONNRESET);
+			}
 			break;
 		}
 		delta=GetTickCount()-tick;
@@ -203,14 +206,26 @@ int drain_response(ssl_context *ssl)
 {
 	BYTE *tmp;
 	int tmp_len=0x10000;
+	int avail;
+	avail=ssl_get_bytes_avail(ssl);
+	if(avail<=0){
+		return FALSE;
+	}
 	tmp=(BYTE*)malloc(tmp_len);
 	if(tmp){
+		int total=0;
 		while(1){
 			int res;
-			res=ssl_read(ssl,tmp,tmp_len);
+			int amount=tmp_len;
+			if(amount>avail)
+				amount=avail;
+			res=ssl_read(ssl,tmp,amount);
 			if(res<=0){
 				break;
 			}
+			avail-=res;
+			if(avail<=0)
+				break;
 		}
 		free(tmp);
 	}

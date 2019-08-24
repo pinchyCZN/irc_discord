@@ -844,6 +844,7 @@ static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *re
 	int res;
 	reset_last_error();
 	ssl=&c->ssl;
+	drain_response(ssl);
 	msg_len=(int)strlen(req);
 	res=ssl_write(ssl,(BYTE*)req,msg_len);
 	if(res<0){

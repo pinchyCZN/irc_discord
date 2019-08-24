@@ -5,7 +5,7 @@
 
 char g_token[512]={0};
 char g_gateway[80]={0};
-int g_timeout=50000;
+int g_timeout=5000;
 
 CRITICAL_SECTION g_mutex;
 
