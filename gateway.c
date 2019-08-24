@@ -443,7 +443,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 		break;
 	case 11: //hrtbt ack
 		g_hb_tick_ack=GetTickCount();
-		//DBGPRINT("recv heartbeat\n");
+		//DBGPRINT("ws recv heartbeat tick=%u\n",g_hb_tick_ack);
 		break;
 	default:
 		DBGPRINT("unhandled opcode:%i\n",opcode);
@@ -564,7 +564,7 @@ void gateway_thread(void *args)
 								if(0==g_hb_tick_ack){
 									g_hb_tick_ack=tick;
 								}else{
-									delta=g_hb_tick_send-g_hb_tick_ack;
+									delta=g_hb_tick_ack-g_hb_tick_send;
 									if(delta>g_hbeat_interval){
 										DBGPRINT("timeout ack of heartbeat\n");
 										exit_ws=TRUE;
