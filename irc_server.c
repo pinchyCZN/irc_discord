@@ -158,6 +158,20 @@ const char *get_irc_msg_str(int code)
 	return result;
 }
 
+static int reply_generic_msg(SOCKET s,int code,const char *fmt,...)
+{
+	int result;
+	char msg[400]={0};
+	char str[512]={0};
+	va_list ap;
+	va_start(ap,fmt);
+	vsnprintf(msg,sizeof(msg),fmt,ap);
+	msg[sizeof(msg)-1]=0;
+	__snprintf(str,sizeof(str),":discord.server %u info :%s\r\n",code,msg);
+	result=net_send_str(s,str);
+	return result>0;
+}
+
 /*
 RECV: :my.server.name 321 test123 Channel :Users  Name
 RECV: :my.server.name 322 test123 #test1234 1 :
@@ -256,6 +270,35 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 	if(tmp[0]){
 		net_send_str(s,tmp);
 		result=TRUE;
+	}
+	return result;
+}
+
+static int process_discord_cmd(SOCKET s,const char *args)
+{
+	int result=FALSE;
+	char w1[20]={0};
+	const char *str=args;
+	get_word(str,w1,sizeof(w1));
+	str=seek_next_word(str);
+	if(startswithi(w1,"INVITE")){
+		char w2[20]={0};
+		get_word(str,w2,sizeof(w2));
+		str=seek_next_word(str);
+		if(startswithi(w2,"USE")){
+			char w3[80]={0};
+			get_word(str,w3,sizeof(w3));
+			if(w3[0]!=0){
+				result=TRUE;
+				add_discord_cmd(CMD_INVITE_USE,w3);
+			}
+		}else if(startswithi(w2,"GET")){
+		}
+	}else if(startswithi(w1,"LEAVE")){
+		char w2[20]={0};
+		get_word(str,w2,sizeof(w2));
+		if(w2[0]!=0)
+			add_discord_cmd(CMD_GUILD_LEAVE,w2);
 	}
 	return result;
 }
@@ -433,13 +476,44 @@ static int handle_connection(SOCKET s)
 							tmp="";
 						cmd_valid=TRUE;
 						add_discord_cmd(CMD_PART,tmp);
+					}else if(startswithi(cmd,"DISCORD")){
+						const char *tmp;
+						cmd_valid=TRUE;
+						tmp=seek_next_word(line);
+						if(tmp)
+							process_discord_cmd(s,tmp);
+						else{
+							const char *help[]={
+								"DISCORD command help",
+								"DISCORD INVITE USE xyz_code",
+								"DISCORD INVITE GET #guild.channel",
+								"DISCORD LEAVE #guild|dm_chan",
+							};
+							int i,count;
+							count=_countof(help);
+							for(i=0;i<count;i++)
+								reply_generic_msg(s,999,"%s",help[i]);
+						}
+					}else if(startswithi(cmd,"HELP")){
+						const char *help[]={
+							"DISCORD <> IRC Bridge command help",
+							"GETMSG #guild.channel [before|after|around] [timestamp] [count]",
+							"GETMSG #guild.channel pin",
+							"GETMSG #guild.channel info",
+							"GETMSG #guild.channel find text",
+							"DISCORD INVITE|LEAVE",
+							"LIST r|p|d {Refresh list,refresh Private/Direct message list}"
+						};
+						int i,count;
+						count=_countof(help);
+						for(i=0;i<count;i++)
+							reply_generic_msg(s,999,"%s",help[i]);
+
 					}else if(startswithi(cmd,"QUIT")){
 						cmd_valid=TRUE;
 						state=99;
 					}else if(startswithi(cmd,"PONG") || startswithi(cmd,"PING")){
-						char tmp[80];
-						__snprintf(tmp,sizeof(tmp),":discord.server 999 info :ACK %s\r\n",cmd);
-						net_send_str(s,tmp);
+						reply_generic_msg(s,999,"ACK %s",cmd);
 						cmd_valid=TRUE;
 					}
 					if(!cmd_valid){

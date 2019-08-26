@@ -77,11 +77,33 @@ static int test_msg_stuff()
 	}
 	printf("count=%i\n",mlist.count);
 }
+
+static int test_is_resp_complete()
+{
+	const char *blah="HTTP/1.1 204 NO CONTENT\r\n"
+	"Date: Mon, 26 Aug 2019 14:55:27 GMT\r\n"
+	"Content-Type: text/html; charset=utf-8\r\n"
+	"Content-Length: 0\r\n"
+	"Connection: keep-alive\r\n"
+	"Server: cloudflare\r\n"
+	"CF-RAY: 50c6a592ec01c5e4-EWR\r\n"
+	"\r\n";
+	char *tmp;
+	int i,len;
+	char *out=0;
+	int out_len=0;
+	tmp=strdup(blah);
+	len=strlen(tmp);
+	i=is_resp_complete(tmp,len);
+	get_content(tmp,len,&out,&out_len);
+	printf("%i\n%s\n",i,out);
+	do_wait();
+	exit(0);
+
+}
 static int test_func()
 {
-	int x;
-	x=isspace(0);
-	printf("%i\n",x);
+	test_is_resp_complete();
 	do_wait();
 	exit(0);
 }

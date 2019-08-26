@@ -697,8 +697,12 @@ static int is_resp_complete(char *data,int data_len)
 					if(0==line_len){
 						if(chunked)
 							state=1;
-						else
+						else{
+							if(0==content_len){
+								result=TRUE;
+							}
 							state=2;
+						}
 					}
 				}
 				break;
@@ -791,7 +795,7 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 					Sleep(10);
 				}
 			}else{
-				DBGPRINT("ERROR ssl read:%n\n",n);
+				DBGPRINT("ERROR ssl read:%i\n",n);
 				break;
 			}
 			delta=GetTickCount()-tick;
@@ -841,6 +845,12 @@ static void save_last_error(char *resp,int resp_len)
 				append_printf(&g_last_http_error,&error_len,"%.80s",content);
 		}
 		json_value_free(root);
+	}else{
+		char line[80]={0};
+		int error_len=0;
+		reset_last_error();
+		get_line(resp,resp_len,0,line,sizeof(line));
+		append_printf(&g_last_http_error,&error_len,"%.80s",line);
 	}
 }
 
@@ -1133,6 +1143,46 @@ static get_me_user_name(CONNECTION *c,char *uname,int uname_len)
 	}
 	return result;
 }
+static int add_json_message_obj(JSON_Object *msg,MESSAGE_LIST *mlist)
+{
+	int result=FALSE;
+	const char *id;
+	char *content;
+	const char *timestamp;
+	char *auth;
+	const char *auth_id;
+	if(0==msg || 0==mlist)
+		return result;
+	id=json_object_get_string(msg,"id");
+	content=strdup(json_object_get_string(msg,"content"));
+	timestamp=json_object_get_string(msg,"timestamp");
+	auth=strdup(json_object_dotget_string(msg,"author.username"));
+	auth_id=json_object_dotget_string(msg,"author.id");
+	fix_spaced_str(auth);
+	//replace_chars(content,"\t\n\r","  ");
+	if(id && content && timestamp && auth){
+		MESSAGE msg={0};
+		if(0==auth)
+			auth="unknown";
+		if(0==auth_id)
+			auth_id="unknown";
+		msg.author=auth;
+		msg.auth_id=(char*)auth_id;
+		msg.id=(char*)id;
+		msg.msg=(char*)content;
+		msg.timestamp=(char*)timestamp;
+		time_str_to_ftime(timestamp,&msg.ftime);
+		if(add_message(mlist,&msg)){
+			result=TRUE;
+		}else{
+			printf("Failed to add msg %s\n",id);
+		}
+	}
+	free(auth);
+	free(content);
+	return result;
+}
+
 //position: -1=before,0=around,1=after
 static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,unsigned int limit,int position,const char *pos_id,int pinned)
 {
@@ -1178,39 +1228,8 @@ static int get_messages(CONNECTION *c,MESSAGE_LIST *mlist,const char *chan_id,un
 				count=json_array_get_count(msgs);
 				for(i=0;i<count;i++){
 					JSON_Object *msg;
-					const char *id;
-					char *content;
-					const char *timestamp;
-					char *auth;
-					const char *auth_id;
 					msg=json_array_get_object(msgs,i);
-					id=json_object_get_string(msg,"id");
-					content=strdup(json_object_get_string(msg,"content"));
-					timestamp=json_object_get_string(msg,"timestamp");
-					auth=strdup(json_object_dotget_string(msg,"author.username"));
-					auth_id=json_object_dotget_string(msg,"author.id");
-					fix_spaced_str(auth);
-					//replace_chars(content,"\t\n\r","  ");
-					if(id && content && timestamp){
-						MESSAGE msg={0};
-						if(0==auth)
-							auth="unknown";
-						if(0==auth_id)
-							auth_id="unknown";
-						msg.author=auth;
-						msg.auth_id=(char*)auth_id;
-						msg.id=(char*)id;
-						msg.msg=(char*)content;
-						msg.timestamp=(char*)timestamp;
-						time_str_to_ftime(timestamp,&msg.ftime);
-						if(pinned)
-							printf("msg:%s %s\n",auth,content);
-						if(!add_message(mlist,&msg)){
-							printf("Failed to add msg %s\n",id);
-						}
-					}
-					free(auth);
-					free(content);
+					add_json_message_obj(msg,mlist);
 				}
 			}
 			json_value_free(root);
@@ -1502,7 +1521,7 @@ static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
 	return result;
 }
 
-static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
+static int post_message(CONNECTION *c,const char *chan_id,const char *msg,MESSAGE_LIST *mlist)
 {
 	int result=FALSE;
 	char *data=0;
@@ -1545,6 +1564,14 @@ static int post_message(CONNECTION *c,const char *chan_id,const char *msg)
 		int res;
 		res=do_http_req(c,data,&content,&content_len);
 		if(res){
+			JSON_Value *root;
+			root=json_parse_string(content);
+			if(json_value_get_type(root)==JSONObject){
+				JSON_Object *obj;
+				obj=json_value_get_object(root);
+				add_json_message_obj(obj,mlist);
+			}
+			json_value_free(root);
 			result=TRUE;
 		}
 		if(content)
@@ -2090,7 +2117,8 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 		tmp=strdup(chan_msg);
 		if(tmp){
 			trim_right(tmp);
-			result=post_message(c,chan->id,tmp);
+			result=post_message(c,chan->id,tmp,&chan->msgs);
+			sort_messages(&chan->msgs);
 			free(tmp);
 		}
 		if(!result){
@@ -2120,7 +2148,8 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 			tmp=strdup(chan_msg);
 			if(tmp){
 				trim_right(tmp);
-				result=post_message(c,dm_chan->id,tmp);
+				result=post_message(c,dm_chan->id,tmp,&chan->msgs);
+				sort_messages(&chan->msgs);
 				free(tmp);
 			}
 			if(!result){
@@ -2706,6 +2735,91 @@ static void process_resume(CONNECTION *conn,DISCORD_CMD *cmd)
 	}
 }
 
+static void process_invite_use(CONNECTION *c,DISCORD_CMD *cmd)
+{
+	char *data=0;
+	int data_len=0;
+	char code[80]={0};
+	char *ptr;
+	get_word(cmd->data,code,sizeof(code));
+	ptr=strrchr(code,'/');
+	if(ptr){
+		__snprintf(code,sizeof(code),"%s",ptr+1);
+	}
+	append_printf(&data,&data_len,"POST /api/v6/invite/%s HTTP/1.1\r\n",code);
+	append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+	append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+	append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+	append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+	append_printf(&data,&data_len,"Authorization: %s\r\n",g_token);
+	append_printf(&data,&data_len,"Content-Length: 0\r\n\r\n");
+	if(data){
+		char *content=0;
+		int content_len=0;
+		int res;
+		res=do_http_req(c,data,&content,&content_len);
+		if(res){
+			post_irc_server_msg("Successfully joined guild");
+		}else{
+			post_irc_server_msg("Failed to join guild:%s",g_last_http_error);
+		}
+		free(content);
+		free(data);
+	}
+}
+
+static void process_guild_leave(CONNECTION *c,DISCORD_CMD *cmd)
+{
+	const char *str=cmd->data;
+	char irc_chan[160]={0};
+	char guild[80]={0};
+	const char *guild_id=0;
+	int i,count;
+	if(0==str || 0==str[0])
+		return;
+	get_word(str,irc_chan,sizeof(irc_chan));
+	if('#'==irc_chan[0]){
+		char channel[80]={0};
+		int res;
+		res=extract_guild_chan(irc_chan,guild,sizeof(guild),channel,sizeof(channel));
+		if(!res){
+			__snprintf(guild,sizeof(guild),"%s",irc_chan+1);
+		}
+	}else{
+		__snprintf(guild,sizeof(guild),"%s",irc_chan);
+	}
+	count=g_guild_list.count;
+	for(i=0;i<count;i++){
+		GUILD *g=&g_guild_list.guild[i];
+		if(0==stricmp(g->name,guild)){
+			guild_id=g->id;
+			break;
+		}
+	}
+	if(0==guild_id){
+		post_irc_server_msg("Error finding guild:%s",guild);
+	}else{
+		char *data=0;
+		int data_len=0;
+		append_printf(&data,&data_len,"DELETE /api/v6/users/@me/guilds/%s HTTP/1.1\r\n",guild_id);
+		append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
+		append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
+		append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
+		append_printf(&data,&data_len,"Content-Type: application/json\r\n");
+		append_printf(&data,&data_len,"Authorization: %s\r\n",g_token);
+		append_printf(&data,&data_len,"Content-Length: 0\r\n\r\n");
+		if(data){
+			char *content=0;
+			int content_len=0;
+			int res;
+			res=do_http_req(c,data,&content,&content_len);
+			post_irc_server_msg("discord server response:%s",g_last_http_error);
+			free(content);
+			free(data);
+		}
+	}
+}
+
 #include "test_main.h"
 
 static int process_requests(CONNECTION *c,const char *uname)
@@ -2759,6 +2873,12 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_RESUME:
 					process_resume(c,&cmd);
+					break;
+				case CMD_INVITE_USE:
+					process_invite_use(c,&cmd);
+					break;
+				case CMD_GUILD_LEAVE:
+					process_guild_leave(c,&cmd);
 					break;
 				case CMD_TEST:
 					//do_discord_test(c);
