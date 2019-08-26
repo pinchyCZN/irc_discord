@@ -375,22 +375,26 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 					|| 0==strcmp(cmd,"MESSAGE_UPDATE")){
 					const char *content;
 					const char *uname;
+					const char *uname_id;
 					const char *chan_id;
-					content=json_object_dotget_string(obj,"d.content");
+					const char *timestamp;
+					uname_id=json_object_dotget_string(obj,"d.author.id");
 					uname=json_object_dotget_string(obj,"d.author.username");
 					chan_id=json_object_dotget_string(obj,"d.channel_id");
-					if(content && uname && chan_id){
+					timestamp=json_object_dotget_string(obj,"d.timestamp");
+					content=json_object_dotget_string(obj,"d.content");
+					if(content && uname && uname_id && chan_id && timestamp){
 						char *tmp;
 						int tmp_len;
-						tmp_len=strlen(content)+strlen(uname)+strlen(chan_id)+8;
+						tmp_len=strlen(chan_id)+strlen(uname_id)+strlen(uname)+strlen(timestamp)+strlen(content)+10;
 						tmp=calloc(tmp_len,1);
 						if(tmp){
 							char *tmp_uname;
 							tmp_uname=_strdup(uname);
 							if(tmp_uname){
 								fix_spaced_str(tmp_uname);
-								//chan id, username, content
-								__snprintf(tmp,tmp_len,"%s %s %s",chan_id,tmp_uname,content);
+								//chan id,uname_id,username,timestamp,content
+								__snprintf(tmp,tmp_len,"%s %s %s %s %s",chan_id,uname_id,tmp_uname,timestamp,content);
 								add_discord_cmd(CMD_CHAN_MSG,tmp);
 								free(tmp_uname);
 							}
@@ -520,6 +524,8 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 	return result;
 }
 
+static int g_exit_ws=FALSE;
+
 void gateway_thread(void *args)
 {
 	CONNECTION con={0};
@@ -542,6 +548,7 @@ void gateway_thread(void *args)
 				continue;
 			}else{
 				DBGPRINT("gateway login\n");
+				g_exit_ws=FALSE;
 				WSASetLastError(0);
 				g_hb_tick_ack=0;
 				res=login_gateway(&con);
@@ -580,8 +587,9 @@ void gateway_thread(void *args)
 							DBGPRINT("error count exceeded\n");
 							break;
 						}
-						if(exit_ws){
+						if(exit_ws || g_exit_ws){
 							DBGPRINT("exit ws\n");
+							add_discord_cmd(CMD_RESUME,"");
 							break;
 						}
 						if(WSAECONNRESET==WSAGetLastError()){
@@ -605,4 +613,9 @@ int trigger_gateway()
 		SetEvent(g_gwevent);
 	}
 	return TRUE;
+}
+
+int set_gateway_exit()
+{
+	g_exit_ws=TRUE;
 }
