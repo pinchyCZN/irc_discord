@@ -316,7 +316,7 @@ static int my_strcmp(const void *arg1,const void *arg2)
 	char **a,**b;
 	a=(char**)arg1;
 	b=(char**)arg2;
-	int res=strcmp(a[0],b[0]);
+	int res=stricmp(a[0],b[0]);
 	return res;
 }
 static int merge_new_nicks(NICK_LIST *nlist,MESSAGE_LIST *mlist)
@@ -1483,41 +1483,6 @@ static int create_dm_channel(CONNECTION *c,const char *uid,DM_LIST *dlist)
 	}
 	free(data);
 	free(json);
-	return result;
-}
-static int get_all_messages(CONNECTION *c,GUILD_LIST *glist)
-{
-	int result=FALSE;
-	int i,count;
-	count=glist->count;
-	for(i=0;i<count;i++){
-		int j,chan_count;
-		GUILD *g=&glist->guild[i];
-		chan_count=g->channels.count;
-		for(j=0;j<chan_count;j++){
-			CHANNEL *chan;
-			int k,msg_count;
-			chan=&g->channels.chan[j];
-			remove_all_msg(&chan->msgs);
-			remove_all_msg(&chan->pin_msgs);
-			printf(">>getting messages for:%s\n",chan->name);
-			get_messages(c,&chan->msgs,chan->id,100,0,NULL,FALSE);
-			get_messages(c,&chan->pin_msgs,chan->id,0,0,NULL,TRUE);
-			sort_messages(&chan->msgs);
-			sort_messages(&chan->pin_msgs);
-			printf("%s %s msg count %i pinned count:%i\n",g->name,chan->name,chan->msgs.count,chan->pin_msgs.count);
-			msg_count=chan->msgs.count;
-			for(k=0;k<msg_count;k++){
-				MESSAGE *m=&chan->msgs.m[k];
-				add_nick(&chan->nicks,m->author);
-			}
-			msg_count=chan->pin_msgs.count;
-			for(k=0;k<msg_count;k++){
-				MESSAGE *m=&chan->pin_msgs.m[k];
-				add_nick(&chan->nicks,m->author);
-			}
-		}
-	}
 	return result;
 }
 
