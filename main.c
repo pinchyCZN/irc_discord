@@ -2148,8 +2148,8 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 			tmp=strdup(chan_msg);
 			if(tmp){
 				trim_right(tmp);
-				result=post_message(c,dm_chan->id,tmp,&chan->msgs);
-				sort_messages(&chan->msgs);
+				result=post_message(c,dm_chan->id,tmp,&dm_chan->msgs);
+				sort_messages(&dm_chan->msgs);
 				free(tmp);
 			}
 			if(!result){
@@ -2774,6 +2774,7 @@ static void process_guild_leave(CONNECTION *c,DISCORD_CMD *cmd)
 	char irc_chan[160]={0};
 	char guild[80]={0};
 	const char *guild_id=0;
+	int is_dm=FALSE;
 	int i,count;
 	if(0==str || 0==str[0])
 		return;
@@ -2797,11 +2798,25 @@ static void process_guild_leave(CONNECTION *c,DISCORD_CMD *cmd)
 		}
 	}
 	if(0==guild_id){
+		count=g_dm_list.count;
+		for(i=0;i<count;i++){
+			DM_CHAN *dm=&g_dm_list.dm_chan[i];
+			if(0==stricmp(dm->recipient,guild)){
+				guild_id=dm->id;
+				is_dm=TRUE;
+				break;
+			}
+		}
+	}
+	if(0==guild_id){
 		post_irc_server_msg("Error finding guild:%s",guild);
 	}else{
 		char *data=0;
 		int data_len=0;
-		append_printf(&data,&data_len,"DELETE /api/v6/users/@me/guilds/%s HTTP/1.1\r\n",guild_id);
+		if(is_dm)
+			append_printf(&data,&data_len,"DELETE /api/v6/channels/%s HTTP/1.1\r\n",guild_id);
+		else
+			append_printf(&data,&data_len,"DELETE /api/v6/users/@me/guilds/%s HTTP/1.1\r\n",guild_id);
 		append_printf(&data,&data_len,"Host: discordapp.com:443\r\n");
 		append_printf(&data,&data_len,"Accept-Encoding: identity\r\n");
 		append_printf(&data,&data_len,"Connection: Keep-Alive\r\n");
@@ -2813,7 +2828,17 @@ static void process_guild_leave(CONNECTION *c,DISCORD_CMD *cmd)
 			int content_len=0;
 			int res;
 			res=do_http_req(c,data,&content,&content_len);
-			post_irc_server_msg("discord server response:%s",g_last_http_error);
+			if(res)
+				post_irc_server_msg("Successfully parted channel %s %s",irc_chan,guild_id);
+			else{
+				if(g_last_http_error){
+					if(strstr(g_last_http_error,"204"))
+						post_irc_server_msg("Successfully parted guild");
+					else
+						post_irc_server_msg("discord server response:%s",g_last_http_error);
+				}else
+					post_irc_server_msg("Unknown error leaving guild");
+			}
 			free(content);
 			free(data);
 		}
