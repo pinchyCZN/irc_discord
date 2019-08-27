@@ -45,3 +45,5 @@ void time_str_to_systime(const char *str,SYSTEMTIME *time);
 void time_str_to_ftime(const char *str,__int64 *val);
 
 __int64 get_current_ftime();
+
+int get_str_chunk(const char *str,int chunk_size,int jitter);

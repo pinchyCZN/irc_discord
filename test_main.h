@@ -101,9 +101,39 @@ static int test_is_resp_complete()
 	exit(0);
 
 }
+
+static int test_str_chunk()
+{
+	char *buf;
+	int buf_len=0x10000;
+	char space[256]={0};
+	char word[256]={0};
+	int i,count=0;
+	buf=calloc(buf_len,1);
+	while(1){
+		int x,i;
+		__snprintf(buf,buf_len,"%s%s",buf," ");
+		x=(rand()%50)+1;
+		for(i=0;i<x;i++)
+			__snprintf(buf,buf_len,"%s%c",buf,'A'+(count%26));
+		count++;
+		if(count>15)
+			break;
+	}
+	printf("%s\n",buf);
+	for(i=0;i<500;i++){
+		int x;
+		printf("---\n");
+		x=get_str_chunk(buf,1+i,250);
+		if(0==x)
+			printf("********************\n");
+		printf("%.*s\n",x,buf);
+	}
+	return 0;
+}
 static int test_func()
 {
-	test_is_resp_complete();
+	test_str_chunk();
 	do_wait();
 	exit(0);
 }

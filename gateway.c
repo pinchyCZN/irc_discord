@@ -615,7 +615,7 @@ int trigger_gateway()
 	return TRUE;
 }
 
-int set_gateway_exit()
+void set_gateway_exit()
 {
 	g_exit_ws=TRUE;
 }

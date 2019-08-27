@@ -601,3 +601,47 @@ __int64 get_current_ftime()
 	tmp=*ptr;
 	return tmp;
 }
+
+//return len of string chunk that occurs on space
+int get_str_chunk(const char *str,int chunk_size,int jitter)
+{
+	int result=0;
+	int len;
+	unsigned char a,b;
+	if(0==str || 0==chunk_size)
+		return result;
+	len=strlen(str);
+	if(0==len)
+		return result;
+	if(len<=chunk_size){
+		result=len;
+		return result;
+	}
+	if(jitter>=chunk_size)
+		jitter=chunk_size-1;
+	a=str[chunk_size-1];
+	b=str[chunk_size];
+	if(!(isspace(a) || isspace(b))){
+		int i;
+		for(i=0;i<jitter;i++){
+			int index=chunk_size-i;
+			a=str[index];
+			if(isspace(a)){
+				result=index;
+				goto EXIT;
+			}
+		}
+		for(i=0;i<jitter;i++){
+			int index=chunk_size+i;
+			a=str[index];
+			if(0==a || isspace(a)){
+				result=index;
+				goto EXIT;
+			}
+		}
+	}
+	if(0==result)
+		result=chunk_size;
+EXIT:
+	return result;
+}

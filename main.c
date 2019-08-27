@@ -1774,23 +1774,19 @@ static int print_irc_chan(const char *guild,const char *chan,char *out,int out_l
 
 static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *msg)
 {
-	int i,msg_len;
-	const int block_size=350;
-	if(0==msg)
+	int index=0;
+	const char *str=msg;
+	if(0==str)
 		return;
-	msg_len=strlen(msg);
-	for(i=0;i<msg_len;i+=block_size){
+	while(1){
 		char irc_msg[512]={0};
 		const char *chunk;
 		int chunk_len;
-		chunk=msg+i;
-		chunk_len=msg_len-i;
-		if(chunk_len>block_size){
-			chunk_len=block_size;
-		}
-		if(chunk_len<=0){
+		chunk=str;
+		chunk_len=get_str_chunk(str,350,100);
+		if(0==chunk_len)
 			break;
-		}
+		str+=chunk_len;
 		//CHAN_MSG chan,nick,msg
 		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %s %.*s",get_irc_msg_str(CHAN_MSG),irc_chan,nick,chunk_len,chunk);
 		push_irc_msg(irc_msg);
@@ -1799,23 +1795,19 @@ static void post_msg_to_irc(const char *irc_chan,const char *nick,const char *ms
 
 static void post_priv_msg_to_irc(const char *nick,const char *msg)
 {
-	int i,msg_len;
-	const int block_size=350;
-	if(0==msg)
+	int index=0;
+	const char *str=msg;
+	if(0==str)
 		return;
-	msg_len=strlen(msg);
-	for(i=0;i<msg_len;i+=block_size){
+	while(1){
 		char irc_msg[512]={0};
 		const char *chunk;
 		int chunk_len;
-		chunk=msg+i;
-		chunk_len=msg_len-i;
-		if(chunk_len>block_size){
-			chunk_len=block_size;
-		}
-		if(chunk_len<=0){
+		chunk=str;
+		chunk_len=get_str_chunk(str,350,100);
+		if(0==chunk_len)
 			break;
-		}
+		str+=chunk_len;
 		//nick,msg
 		__snprintf(irc_msg,sizeof(irc_msg),"%s %s %.*s",get_irc_msg_str(PRIV_MSG),nick,chunk_len,chunk);
 		push_irc_msg(irc_msg);
