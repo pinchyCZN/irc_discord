@@ -132,9 +132,10 @@
   <ItemGroup>
     <ClCompile Include="config.c" />
     <ClCompile Include="gateway.c" />
+    <ClCompile Include="gui.c" />
     <ClCompile Include="irc_server.c" />
     <ClCompile Include="libstring.c" />
-    <ClCompile Include="main.c" />
+    <ClCompile Include="discord.c" />
     <ClCompile Include="network.c" />
     <ClCompile Include="parson.c" />
     <ClCompile Include="polarssl\library\aes.c" />
@@ -179,6 +180,7 @@
     <ClInclude Include="config.h" />
     <ClInclude Include="discord.h" />
     <ClInclude Include="gateway.h" />
+    <ClInclude Include="gui.h" />
     <ClInclude Include="irc_server.h" />
     <ClInclude Include="libstring.h" />
     <ClInclude Include="network.h" />
