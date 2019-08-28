@@ -1,6 +1,8 @@
 .vs/
 Debug/
 Release/
+DebugConsole/
 miranda/
 polarssl/
 *.user
+*.aps
