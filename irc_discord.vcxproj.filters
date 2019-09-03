@@ -13,122 +13,14 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="polarssl">
+    <Filter Include="mbedtls">
       <UniqueIdentifier>{3764e0fe-945c-401f-be81-67af93e4d6d5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="mbedtls\crypto">
+      <UniqueIdentifier>{e5d1f658-42c5-4bd1-a772-3e4037008895}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="polarssl\library\aes.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\arc4.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\asn1parse.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\base64.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\bignum.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\camellia.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\certs.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\cipher.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\cipher_wrap.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\ctr_drbg.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\debug.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\des.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\dhm.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\entropy.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\entropy_poll.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\error.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\havege.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\md.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\md_wrap.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\md2.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\md4.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\md5.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\net.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\padlock.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\pem.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\pkcs11.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\rsa.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\sha1.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\sha2.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\sha4.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\ssl_cli.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\ssl_srv.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\ssl_tls.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\timing.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\version.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\x509parse.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
-    <ClCompile Include="polarssl\library\xtea.c">
-      <Filter>polarssl</Filter>
-    </ClCompile>
     <ClCompile Include="gateway.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -152,6 +44,258 @@
     </ClCompile>
     <ClCompile Include="discord.c">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\certs.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\debug.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\error.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\net_sockets.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\pkcs11.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_cache.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_ciphersuites.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_cli.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_cookie.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_srv.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_ticket.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\ssl_tls.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\version.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\version_features.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509_create.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509_crl.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509_crt.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509_csr.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509write_crt.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\library\x509write_csr.c">
+      <Filter>mbedtls</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\aes.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\aesni.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\arc4.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\aria.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\asn1parse.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\asn1write.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\base64.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\bignum.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\blowfish.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\camellia.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ccm.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\chacha20.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\chachapoly.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\cipher.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\cipher_wrap.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\cmac.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ctr_drbg.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\des.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\dhm.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ecdh.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ecdsa.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ecjpake.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ecp.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ecp_curves.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\entropy.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\entropy_poll.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\gcm.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\havege.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\hkdf.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\hmac_drbg.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\md.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\md_wrap.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\md2.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\md4.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\md5.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\memory_buffer_alloc.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\nist_kw.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\oid.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\padlock.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pem.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pk.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pk_wrap.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pkcs5.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pkcs12.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pkparse.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\pkwrite.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\platform.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\platform_util.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\poly1305.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\psa_crypto.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\psa_crypto_se.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\psa_crypto_slot_management.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\psa_crypto_storage.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\psa_its_file.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\ripemd160.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\rsa.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\rsa_internal.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\sha1.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\sha256.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\sha512.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\threading.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\timing.c">
+      <Filter>mbedtls\crypto</Filter>
+    </ClCompile>
+    <ClCompile Include="mbedtls\crypto\library\xtea.c">
+      <Filter>mbedtls\crypto</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -184,6 +328,27 @@
     </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_core.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_invasive.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_its.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_se.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_service_integration.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_slot_management.h">
+      <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="mbedtls\crypto\library\psa_crypto_storage.h">
+      <Filter>mbedtls\crypto</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

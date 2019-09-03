@@ -747,7 +747,7 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 	int result=FALSE;
 	char *tmp=0;
 	int tmp_len=8*1024;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	ssl=&c->ssl;
 	tmp=(char*)calloc(tmp_len,1);
 	if(tmp){
@@ -773,7 +773,7 @@ static int get_response(CONNECTION *c,char **resp,int *resp_len)
 					break;
 				}
 			}
-			n=ssl_read(ssl,(BYTE*)tmp+offset,avail);
+			n=recv_any_data(ssl,(BYTE*)tmp+offset,avail);
 			if(n>=0){
 				int res;
 				char *data;
@@ -858,7 +858,7 @@ static void save_last_error(char *resp,int resp_len)
 static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *resp_content_len)
 {
 	int result=FALSE;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	int msg_len;
 	char *resp=0;
 	int resp_len=0;
@@ -867,9 +867,8 @@ static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *re
 	ssl=&c->ssl;
 	drain_response(ssl);
 	msg_len=(int)strlen(req);
-	res=ssl_write(ssl,(BYTE*)req,msg_len);
-	if(res<0){
-		WSASetLastError(WSAECONNRESET);
+	res=send_data(ssl,(BYTE*)req,msg_len);
+	if(!res){
 		return result;
 	}
 	res=get_response(c,&resp,&resp_len);
@@ -910,14 +909,14 @@ static int connect_disc(CONNECTION *c)
 {
 	int result=FALSE;
 	int res;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	const char *host;
 	int port=443;
 	ssl=&c->ssl;
-	memset(ssl,0,sizeof(ssl_context));
+	memset(ssl,0,sizeof(mbedtls_ssl_context));
 	host="discordapp.com";
 	port=443;
-	res=ssl_connect(ssl,0,host,port,(int*)&c->sock);
+	res=open_connection(c,host,port);
 	if(res){
 		char *data=0;
 		int data_len=0;
@@ -2810,17 +2809,10 @@ static int process_requests(CONNECTION *c,const char *uname)
 	HANDLE hlist[2]={0};
 	int hcount=0;
 	DWORD res;
-	hlist[hcount++]=(HANDLE)c->sock;
 	hlist[hcount++]=g_event;
-	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,100,FALSE);
+	res=WSAWaitForMultipleEvents(hcount,hlist,FALSE,1000,FALSE);
 	switch(res){
-	case WAIT_OBJECT_0: //socket
-		{
-			result=TRUE;
-			printf("socket event\n");
-		}
-		break;
-	case WAIT_OBJECT_0+1: //req
+	case WAIT_OBJECT_0: //req
 		while(1)
 		{
 			DISCORD_CMD cmd={0};
@@ -2855,6 +2847,10 @@ static int process_requests(CONNECTION *c,const char *uname)
 					break;
 				case CMD_RESUME:
 					process_resume(c,&cmd);
+					if(WSAECONNRESET==WSAGetLastError()){
+						printf("ERROR:re-adding discord resume command\n");
+						add_discord_cmd(cmd.cmd,cmd.data);
+					}
 					break;
 				case CMD_INVITE_USE:
 					process_invite_use(c,&cmd);

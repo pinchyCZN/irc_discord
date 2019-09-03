@@ -78,7 +78,7 @@ static int get_payload_size(BYTE *data)
 static int login_gateway(CONNECTION *c)
 {
 	int result=FALSE;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	int res;
 	const char *host;
 	int port;
@@ -86,7 +86,7 @@ static int login_gateway(CONNECTION *c)
 	//close_connection(c);
 	host=g_gateway;
 	port=443;
-	res=ssl_connect(ssl,0,host,port,(int*)&c->sock);
+	res=open_connection(c,host,port);
 	if(!res){
 		return result;
 	}
@@ -159,7 +159,7 @@ static int login_gateway(CONNECTION *c)
 
 
 
-static int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
+static int get_ws_payload(CONNECTION *conn,WS_PAYLOAD *payload,int *timeout)
 {
 	int result=FALSE;
 	BYTE header[32]={0};
@@ -173,21 +173,26 @@ static int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 		int res;
 		switch(state){
 		case 0: //get header prefix
-			memset(header,0, sizeof(header));
-			res=recv_data(ssl,header,2);
-			if(res){
-				header_size=get_header_size(header);
-				is_masked=(header[1] & 0x80) != 0;
-				offset=2;
-				state=1;
-			}else{
+			res=is_data_avail(conn,1000);
+			if(!res){
 				*timeout=TRUE;
 				fail=TRUE;
+			}else{
+				memset(header,0, sizeof(header));
+				res=recv_data(&conn->ssl,header,2);
+				if(res){
+					header_size=get_header_size(header);
+					is_masked=(header[1] & 0x80) != 0;
+					offset=2;
+					state=1;
+				}else{
+					fail=TRUE;
+				}
 			}
 			break;
 		case 1: //get remaining header
 			if(header_size>offset){
-				res=recv_data(ssl,header+offset,header_size-offset);
+				res=recv_data(&conn->ssl,header+offset,header_size-offset);
 				if(res){
 					offset+=res;
 					state=2;
@@ -205,7 +210,7 @@ static int get_ws_payload(ssl_context *ssl,WS_PAYLOAD *payload,int *timeout)
 				BYTE *tmp;
 				tmp=(BYTE*)calloc(payload_size,1);
 				if(tmp){
-					res=recv_data(ssl,tmp,payload_size);
+					res=recv_data(&conn->ssl,tmp,payload_size);
 					if(res){
 						state=3;
 						payload->data=tmp;
@@ -266,7 +271,7 @@ static int append_data(BYTE **data,int *data_len,BYTE *append,int append_len)
 }
 
 
-static int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
+static int send_ws_payload(mbedtls_ssl_context *ssl,int opcode,BYTE *data,int data_len)
 {
 	int result=FALSE;
 	BYTE hdr[16]={0};
@@ -294,7 +299,7 @@ static int send_ws_payload(ssl_context *ssl,int opcode,BYTE *data,int data_len)
 	return result;
 }
 
-static int send_identify(ssl_context *ssl)
+static int send_identify(mbedtls_ssl_context *ssl)
 {
 	int result=FALSE;
 	char *buf=0;
@@ -315,7 +320,7 @@ static int send_identify(ssl_context *ssl)
 	free(buf);
 	return result;
 }
-static int send_heartbeat(ssl_context *ssl,int seq_num)
+static int send_heartbeat(mbedtls_ssl_context *ssl,int seq_num)
 {
 	int result=FALSE;
 	char *buf=0;
@@ -339,7 +344,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 {
 	int result=FALSE;
 	int opcode=-1;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	JSON_Value *root;
 	JSON_Object *obj;
 	JSON_Value *val;
@@ -459,7 +464,7 @@ static int process_payload(CONNECTION *con,BYTE *data,int data_len,int *seq_num)
 	return result;
 }
 
-static int send_pong(ssl_context *ssl,BYTE *data,int data_len)
+static int send_pong(mbedtls_ssl_context *ssl,BYTE *data,int data_len)
 {
 	int result=FALSE;
 	send_ws_payload(ssl,10,data,data_len);
@@ -474,9 +479,9 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 	BYTE *tmp=*buf;
 	int tmp_size=*buf_size;
 	int timeout=FALSE;
-	ssl_context *ssl;
+	mbedtls_ssl_context *ssl;
 	ssl=&con->ssl;
-	res=get_ws_payload(ssl,&payload,&timeout);
+	res=get_ws_payload(con,&payload,&timeout);
 	if(!res){
 		if(!timeout){
 			(*error_count)++;
@@ -503,7 +508,7 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 			}
 			break;
 		case 8: // close
-			DBGPRINT("gateway close\n");
+			DBGPRINT("!server has signaled gateway to close\n");
 			SetEvent(g_gwevent);
 			*exit_ws=TRUE;
 			break;
@@ -512,7 +517,7 @@ static int process_ws(CONNECTION *con,BYTE **buf,int *buf_size,int *exit_ws,int 
 			send_pong(ssl,payload.data,payload.len);
 			break;
 		default:
-			DBGPRINT("gateway unhandled opcode %i\n",opcode);
+			DBGPRINT("WARNING: gateway unhandled opcode %i\n",opcode);
 			break;
 		}
 		if(payload.data){
@@ -560,7 +565,6 @@ void gateway_thread(void *args)
 					int seq_num=0;
 					DWORD tick;
 					tick=GetTickCount();
-					con.ssl.read_timeout=2;
 					while(1){
 						process_ws(&con,&payload,&payload_size,&exit_ws,&error_count,&seq_num);
 						if(!exit_ws){

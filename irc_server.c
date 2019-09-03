@@ -1,7 +1,7 @@
 #include <winsock2.h>
 #include <Windows.h>
 #include <stdio.h>
-#include "polarssl/net.h"
+#include "mbedtls/net.h"
 #include "config.h"
 #include "libstring.h"
 #include "discord.h"
@@ -41,7 +41,7 @@ topic:
 :my.server.name 332 test123 #test_serv1.general :some topic
 */
 
-static int read_line(SOCKET s,unsigned char *data,int data_len)
+static int read_line(mbedtls_net_context *ctx,unsigned char *data,int data_len)
 {
 	int index=0;
 	while(1){
@@ -50,7 +50,7 @@ static int read_line(SOCKET s,unsigned char *data,int data_len)
 		if(index>=data_len){
 			break;
 		}
-		res=net_recv((void*)&s,tmp,1);
+		res=mbedtls_net_recv(ctx,tmp,1);
 		if(res>0){
 			unsigned char a;
 			a=tmp[0];
@@ -66,22 +66,22 @@ static int read_line(SOCKET s,unsigned char *data,int data_len)
 	return index;
 }
 
-static int net_send_str(SOCKET s,const char *str)
+static int net_send_str(mbedtls_net_context *ctx,const char *str)
 {
 	int slen;
 	slen=strlen(str);
-	return net_send(&s,str,slen);
+	return mbedtls_net_send(ctx,str,slen);
 }
-static int send_motd(SOCKET s,char *nick)
+static int send_motd(mbedtls_net_context *ctx,char *nick)
 {
 	int result=TRUE;
 	char tmp[80]={0};
 	_snprintf(tmp,sizeof(tmp),":discord.server 001 %s :Welcome to irc discord bridge\r\n",nick);
-	net_send_str(s,tmp);
+	net_send_str(ctx,tmp);
 	_snprintf(tmp,sizeof(tmp),"PING :%u\r\n",GetTickCount());
-	net_send_str(s,tmp);
+	net_send_str(ctx,tmp);
 	_snprintf(tmp,sizeof(tmp),":discord.server 376 %s :MOTD BLAH BLAH\r\n",nick);
-	net_send_str(s,tmp);
+	net_send_str(ctx,tmp);
 	return result;
 }
 
@@ -158,7 +158,7 @@ const char *get_irc_msg_str(int code)
 	return result;
 }
 
-static int reply_generic_msg(SOCKET s,int code,const char *fmt,...)
+static int reply_generic_msg(mbedtls_net_context *ctx,int code,const char *fmt,...)
 {
 	int result;
 	char msg[400]={0};
@@ -168,7 +168,7 @@ static int reply_generic_msg(SOCKET s,int code,const char *fmt,...)
 	vsnprintf(msg,sizeof(msg),fmt,ap);
 	msg[sizeof(msg)-1]=0;
 	__snprintf(str,sizeof(str),":discord.server %u info :%s\r\n",code,msg);
-	result=net_send_str(s,str);
+	result=net_send_str(ctx,str);
 	return result>0;
 }
 
@@ -179,7 +179,7 @@ RECV: :my.server.name 322 test123 #test123 1 :
 RECV: :my.server.name 323 test123 :End of /LIST
 */
 
-static int handle_msg(SOCKET s,const char *str,const char *nick)
+static int handle_msg(mbedtls_net_context *ctx,const char *str,const char *nick)
 {
 	int result=FALSE;
 	int code;
@@ -268,13 +268,13 @@ static int handle_msg(SOCKET s,const char *str,const char *nick)
 		break;
 	}
 	if(tmp[0]){
-		net_send_str(s,tmp);
+		net_send_str(ctx,tmp);
 		result=TRUE;
 	}
 	return result;
 }
 
-static int process_discord_cmd(SOCKET s,const char *args)
+static int process_discord_cmd(mbedtls_net_context *ctx,const char *args)
 {
 	int result=FALSE;
 	char w1[20]={0};
@@ -285,17 +285,17 @@ static int process_discord_cmd(SOCKET s,const char *args)
 		char w2[20]={0};
 		get_word(str,w2,sizeof(w2));
 		str=seek_next_word(str);
-		if(startswithi(w2,"USE")){
-			char w3[80]={0};
-			get_word(str,w3,sizeof(w3));
-			if(w3[0]!=0){
-				result=TRUE;
-				add_discord_cmd(CMD_INVITE_USE,w3);
-			}
-		}else if(startswithi(w2,"GET")){
+		if(startswithi(w2,"GET")){
+		}
+	}else if(startswithi(w1,"JOIN")){
+		char w2[80]={0};
+		get_word(str,w2,sizeof(w2));
+		if(w2[0]!=0){
+			result=TRUE;
+			add_discord_cmd(CMD_INVITE_USE,w2);
 		}
 	}else if(startswithi(w1,"LEAVE")){
-		char w2[20]={0};
+		char w2[160]={0};
 		get_word(str,w2,sizeof(w2));
 		if(w2[0]!=0)
 			add_discord_cmd(CMD_GUILD_LEAVE,w2);
@@ -358,7 +358,7 @@ static int pop_irc_msg(char **msg)
 	return result;
 }
 
-static int data_avail(SOCKET s,int timeout,int *has_error)
+static int data_avail(mbedtls_net_context *ctx,int timeout,int *has_error)
 {
 	int result=FALSE;
 	int res;
@@ -366,7 +366,7 @@ static int data_avail(SOCKET s,int timeout,int *has_error)
 	struct timeval time={0};
 	time.tv_usec=timeout*1000;
 	readfd.fd_count=1;
-	readfd.fd_array[0]=s;
+	readfd.fd_array[0]=ctx->fd;
 	res=select(1,&readfd,NULL,NULL,&time);
 	if(1==res){
 		result=TRUE;
@@ -376,7 +376,7 @@ static int data_avail(SOCKET s,int timeout,int *has_error)
 	return result;
 }
 
-static int handle_connection(SOCKET s)
+static int handle_connection(mbedtls_net_context *ctx)
 {
 	static char line[2048];
 	char nick[80]={0};
@@ -398,19 +398,19 @@ static int handle_connection(SOCKET s)
 				if(0==msg){
 					continue;
 				}
-				handle_msg(s,msg,nick);
+				handle_msg(ctx,msg,nick);
 				free(msg);
 			}
 		}
 		has_error=FALSE;
-		res=data_avail(s,30,&has_error);
+		res=data_avail(ctx,30,&has_error);
 		if(has_error){
 			printf("IRC socket select error\n");
 			break;
 		}
 		if(res){
 			memset(line,0,sizeof(line));
-			res=read_line(s,line,sizeof(line));
+			res=read_line(ctx,line,sizeof(line));
 			if(res<=0){
 				break;
 			}
@@ -420,7 +420,7 @@ static int handle_connection(SOCKET s)
 			case 0:
 				if(startswithi(line,"USER ")){
 					sscanf(line,"%*s%79s",name);
-					send_motd(s,nick);
+					send_motd(ctx,nick);
 				}else if(startswithi(line,"NICK ")){
 					sscanf(line,"%*s%79s",nick);
 				}
@@ -481,18 +481,18 @@ static int handle_connection(SOCKET s)
 						cmd_valid=TRUE;
 						tmp=seek_next_word(line);
 						if(tmp)
-							process_discord_cmd(s,tmp);
+							process_discord_cmd(ctx,tmp);
 						else{
 							const char *help[]={
 								"DISCORD command help",
-								"DISCORD INVITE USE xyz_code",
-								"DISCORD INVITE GET #guild.channel",
+								"DISCORD JOIN xyz_code",
+								"DISCORD INVITE #guild.channel",
 								"DISCORD LEAVE #guild|dm_chan",
 							};
 							int i,count;
 							count=_countof(help);
 							for(i=0;i<count;i++)
-								reply_generic_msg(s,999,"%s",help[i]);
+								reply_generic_msg(ctx,999,"%s",help[i]);
 						}
 					}else if(startswithi(cmd,"HELP")){
 						const char *help[]={
@@ -501,24 +501,25 @@ static int handle_connection(SOCKET s)
 							"GETMSG #guild.channel pin",
 							"GETMSG #guild.channel info",
 							"GETMSG #guild.channel find text",
-							"DISCORD INVITE|LEAVE",
+							"DISCORD JOIN|INVITE|LEAVE",
 							"LIST r|p|d {Refresh list,refresh Private/Direct message list}"
 						};
 						int i,count;
 						count=_countof(help);
 						for(i=0;i<count;i++)
-							reply_generic_msg(s,999,"%s",help[i]);
+							reply_generic_msg(ctx,999,"%s",help[i]);
+						cmd_valid=TRUE;
 
 					}else if(startswithi(cmd,"QUIT")){
 						cmd_valid=TRUE;
 						state=99;
 					}else if(startswithi(cmd,"PONG") || startswithi(cmd,"PING")){
-						reply_generic_msg(s,999,"ACK %s",cmd);
+						reply_generic_msg(ctx,999,"ACK %s",cmd);
 						cmd_valid=TRUE;
 					}
 					if(!cmd_valid){
 						_snprintf(line,sizeof(line),":discord.server 421 %s %s :unknown command\r\n",nick,cmd);
-						net_send_str(s,line);
+						net_send_str(ctx,line);
 					}
 				}
 				break;
@@ -533,9 +534,10 @@ static int handle_connection(SOCKET s)
 
 void irc_thread(void *args)
 {
-	SOCKET s;
+	mbedtls_net_context ctx={0};
 	const char *host="127.0.0.1";
 	int port;
+	char str[40]={0};
 	int res;
 	if(0==g_irc_event){
 		g_irc_event=CreateEventA(NULL,FALSE,FALSE,"IRC_EVENT");
@@ -545,19 +547,21 @@ void irc_thread(void *args)
 		InitializeCriticalSection(&irc_mutex);
 	}
 	port=get_irc_port();
-	res=net_bind(&s,host,port);
+	_snprintf(str,sizeof(str),"%u",port);
+	mbedtls_net_init(&ctx);
+	res=mbedtls_net_bind(&ctx,host,str,MBEDTLS_NET_PROTO_TCP);
 	if(0!=res){
 		printf("failed to bind to %s:%i\n",host,port);
 		return;
 	}
 	while(1){
-		SOCKET client=0;
+		mbedtls_net_context client={0};
 		printf("IRC server waiting for connection\n");
-		res=net_accept(s,&client,NULL);
+		res=mbedtls_net_accept(&ctx,&client,0,0,0);
 		if(0==res){
 			printf("connection accepted\n");
-			handle_connection(client);
-			net_close(client);
+			handle_connection(&client);
+			mbedtls_net_free(&client);
 		}else{
 			Sleep(1000);
 		}

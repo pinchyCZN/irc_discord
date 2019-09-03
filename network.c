@@ -3,6 +3,8 @@
 #include "config.h"
 #include "libstring.h"
 
+#pragma warning(disable:4996)
+
 static void my_debug(void *ctx,int level,const char *str)
 {
 	static int DEBUG_LEVEL=5;
@@ -15,58 +17,78 @@ static void my_debug(void *ctx,int level,const char *str)
 
 int close_connection(CONNECTION *c)
 {
-	ssl_context *ssl;
+	mbedtls_net_free(&c->ctx);
+	mbedtls_ssl_free(&c->ssl);
+	mbedtls_ssl_config_free(&c->conf);
+	mbedtls_ctr_drbg_free(&c->cts_drbg);
+	mbedtls_entropy_free(&c->entropy);
+	return TRUE;
+}
+
+int open_connection(CONNECTION *c,const char *host,const int port)
+{
+	int result=FALSE;
+	mbedtls_ssl_context *ssl;
+	mbedtls_ssl_config *conf;
+	mbedtls_net_context *ctx;
+	mbedtls_entropy_context *entropy;
+	mbedtls_ctr_drbg_context *ctr_drbg;
+	const char *per="BLAH123";
+	char port_str[40]={0};
+	int res;
 	ssl=&c->ssl;
-	if(ssl){
-		ssl_close_notify(ssl);
-		if(c->sock){
-			net_close((int)c->sock);
-			c->sock=0;
-		}
-		ssl_free(ssl);
+	conf=&c->conf;
+	ctx=&c->ctx;
+	entropy=&c->entropy;
+	ctr_drbg=&c->cts_drbg;
+	mbedtls_net_init(ctx);
+	mbedtls_ssl_init(ssl);
+	mbedtls_ssl_config_init(conf);
+	mbedtls_entropy_init(entropy);
+	if(0!=mbedtls_ctr_drbg_seed(ctr_drbg,mbedtls_entropy_func,entropy,per,strlen(per))){
+		goto ERROR_OPEN;
+	}
+	if(0!=mbedtls_ssl_config_defaults(conf,MBEDTLS_SSL_IS_CLIENT,MBEDTLS_SSL_TRANSPORT_STREAM,MBEDTLS_SSL_PRESET_DEFAULT)){
+		goto ERROR_OPEN;
+	}
+	mbedtls_ssl_conf_authmode(conf,MBEDTLS_SSL_VERIFY_NONE);
+	mbedtls_ssl_conf_rng(conf,mbedtls_ctr_drbg_random,ctr_drbg);
+	if(0!=mbedtls_ssl_setup(ssl,conf)){
+		goto ERROR_OPEN;
+	}
+	mbedtls_ssl_set_bio(ssl,ctx,mbedtls_net_send,mbedtls_net_recv,NULL);
+	_snprintf(port_str,sizeof(port_str),"%u",port);
+	res=mbedtls_net_connect(ctx,host,port_str,MBEDTLS_NET_PROTO_TCP);
+	if(0==res){
+		res=mbedtls_ssl_handshake(ssl);
+		if(0==res)
+			result=TRUE;
+	}
+ERROR_OPEN:
+	if(!result){
+		close_connection(c);
+	}
+	return result;
+}
+
+static int must_close(const int error)
+{
+	int i,count;
+	const int list[]={
+		MBEDTLS_ERR_SSL_WANT_READ,
+		MBEDTLS_ERR_SSL_WANT_WRITE,
+		MBEDTLS_ERR_SSL_ASYNC_IN_PROGRESS,
+		MBEDTLS_ERR_SSL_CRYPTO_IN_PROGRESS,
+	};
+	count=sizeof(list)/sizeof(list[0]);
+	for(i=0;i<count;i++){
+		if(list[i]==error)
+			return FALSE;
 	}
 	return TRUE;
 }
 
-int ssl_connect(ssl_context *ssl,const int options,const char *host,const int port,int *c_socket)
-{
-	int result=FALSE;
-	int ret;
-	entropy_context entropy;
-	ctr_drbg_context ctr_drbg;
-	ssl_session ssn;
-	int socket=0;
-	const char *pers="net_connection";
-
-	memset(&ssn,0,sizeof(ssl_session));
-	entropy_init(&entropy);
-	if((ret=ctr_drbg_init(&ctr_drbg,entropy_func,&entropy,
-		(unsigned char *)pers,strlen(pers)))!=0){
-		return result;
-	}
-	if((ret=net_connect(&socket,host,port))!=0)
-		return result;
-
-	if((ret=ssl_init(ssl))!=0){
-		net_close(socket);
-		return result;
-	}
-	ssl_set_endpoint(ssl,SSL_IS_CLIENT);
-	ssl_set_authmode(ssl,SSL_VERIFY_NONE);
-
-	ssl_set_rng(ssl,ctr_drbg_random,&ctr_drbg);
-	ssl_set_dbg(ssl,my_debug,stdout);
-	ssl_set_bio(ssl,net_recv,&socket,net_send,&socket);
-	c_socket[0]=socket;
-
-	ssl_set_ciphersuites(ssl,ssl_default_ciphersuites);
-	ssl_set_session(ssl,1,600,&ssn);
-	ssl->read_timeout=30;
-	result=TRUE;
-	return result;
-}
-
-int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
+int read_line(mbedtls_ssl_context *ssl,char **line,int *line_len,int timeout)
 {
 	int result=FALSE;
 	BYTE *tmp=0;
@@ -95,7 +117,7 @@ int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 				break;
 			}
 		}
-		res=ssl_read(ssl,tmp+index,1);
+		res=mbedtls_ssl_read(ssl,tmp+index,1);
 		if(res>0){
 			BYTE a;
 			a=tmp[index];
@@ -107,6 +129,10 @@ int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 		}else if(0==res){
 			Sleep(100);
 		}else{
+			if(must_close(res)){
+				printf("ERROR:must close after read line\n");
+				WSASetLastError(WSAECONNRESET);
+			}
 			break;
 		}
 		if(result){
@@ -135,7 +161,7 @@ int read_line(ssl_context *ssl,char **line,int *line_len,int timeout)
 	return result;
 }
 
-int recv_data(ssl_context *ssl,unsigned char *data,int len)
+int recv_data(mbedtls_ssl_context *ssl,unsigned char *data,int len)
 {
 	int result=FALSE;
 	DWORD tick,delta;
@@ -148,7 +174,7 @@ int recv_data(ssl_context *ssl,unsigned char *data,int len)
 		BYTE *ptr;
 		amount=len-offset;
 		ptr=data+offset;
-		res=ssl_read(ssl,ptr,amount);
+		res=mbedtls_ssl_read(ssl,ptr,amount);
 		if(res>0){
 			offset+=res;
 			if(offset>=len){
@@ -158,38 +184,8 @@ int recv_data(ssl_context *ssl,unsigned char *data,int len)
 		}else if(0==res){
 			Sleep(100);
 		}else{
-			break;
-		}
-		delta=GetTickCount()-tick;
-		if(delta>=timeout){
-			break;
-		}
-	}
-	return result;
-}
-
-int send_data(ssl_context *ssl,unsigned char *data,int len)
-{
-	int result=FALSE;
-	int offset=0;
-	DWORD tick,delta;
-	DWORD timeout=g_timeout;
-	tick=GetTickCount();
-	while(1){
-		int res;
-		//dump_hex(data,len);
-		res=ssl_write(ssl,data+offset,len-offset);
-		if(res>0){
-			offset+=res;
-			if((len-offset)<=0){
-				result=TRUE;
-				break;
-			}
-		}else if(POLARSSL_ERR_NET_WANT_WRITE==res){
-			printf("want write\n");
-			Sleep(10);
-		}else{
-			if(res<0){
+			if(must_close(res)){
+				printf("ERROR:must close after read data\n");
 				WSASetLastError(WSAECONNRESET);
 			}
 			break;
@@ -202,12 +198,64 @@ int send_data(ssl_context *ssl,unsigned char *data,int len)
 	return result;
 }
 
-int drain_response(ssl_context *ssl)
+//return amount read, -1 if error
+int recv_any_data(mbedtls_ssl_context *ssl,unsigned char *data,int len)
+{
+	int result=0;
+	int res;
+	res=mbedtls_ssl_read(ssl,data,len);
+	if(res>=0){
+		result=res;
+	}else{
+		if(must_close(res)){
+			printf("must close after read any data\n");
+			WSASetLastError(WSAECONNRESET);
+			result=-1;
+		}
+	}
+	return result;
+}
+
+int send_data(mbedtls_ssl_context *ssl,unsigned char *data,int len)
+{
+	int result=FALSE;
+	int offset=0;
+	DWORD tick,delta;
+	DWORD timeout=g_timeout;
+	tick=GetTickCount();
+	while(1){
+		int res;
+		//dump_hex(data,len);
+		res=mbedtls_ssl_write(ssl,data+offset,len-offset);
+		if(res>0){
+			offset+=res;
+			if((len-offset)<=0){
+				result=TRUE;
+				break;
+			}
+		}else if(0==res){
+			Sleep(50);
+		}else{
+			if(must_close(res)){
+				printf("ERROR:must close after send\n");
+				WSASetLastError(WSAECONNRESET);
+			}
+			break;
+		}
+		delta=GetTickCount()-tick;
+		if(delta>=timeout){
+			break;
+		}
+	}
+	return result;
+}
+
+int drain_response(mbedtls_ssl_context *ssl)
 {
 	BYTE *tmp;
 	int tmp_len=0x10000;
 	int avail;
-	avail=ssl_get_bytes_avail(ssl);
+	avail=mbedtls_ssl_get_bytes_avail(ssl);
 	if(avail<=0){
 		return FALSE;
 	}
@@ -219,8 +267,12 @@ int drain_response(ssl_context *ssl)
 			int amount=tmp_len;
 			if(amount>avail)
 				amount=avail;
-			res=ssl_read(ssl,tmp,amount);
+			res=mbedtls_ssl_read(ssl,tmp,amount);
 			if(res<=0){
+				if(must_close(res)){
+					printf("ERROR:must close after drain\n");
+					WSASetLastError(WSAECONNRESET);
+				}
 				break;
 			}
 			avail-=res;
@@ -232,3 +284,18 @@ int drain_response(ssl_context *ssl)
 	return TRUE;
 }
 
+int is_data_avail(CONNECTION *conn,int timeout)
+{
+	int result=FALSE;
+	int res;
+	res=mbedtls_ssl_get_bytes_avail(&conn->ssl);
+	if(res)
+		return TRUE;
+	res=mbedtls_net_poll(&conn->ctx,MBEDTLS_NET_POLL_READ,timeout);
+	if(res>=0){
+		res=res&MBEDTLS_NET_POLL_READ;
+		if(res)
+			result=TRUE;
+	}
+	return result;
+}
