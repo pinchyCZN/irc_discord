@@ -196,6 +196,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="anchor_system.c" />
     <ClCompile Include="config.c" />
     <ClCompile Include="gateway.c" />
     <ClCompile Include="gui.c" />
@@ -290,6 +291,7 @@
     <ClCompile Include="parson.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="anchor_system.h" />
     <ClInclude Include="config.h" />
     <ClInclude Include="discord.h" />
     <ClInclude Include="gateway.h" />

@@ -297,6 +297,9 @@
     <ClCompile Include="mbedtls\crypto\library\xtea.c">
       <Filter>mbedtls\crypto</Filter>
     </ClCompile>
+    <ClCompile Include="anchor_system.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="irc_server.h">
@@ -349,6 +352,9 @@
     </ClInclude>
     <ClInclude Include="mbedtls\crypto\library\psa_crypto_storage.h">
       <Filter>mbedtls\crypto</Filter>
+    </ClInclude>
+    <ClInclude Include="anchor_system.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
