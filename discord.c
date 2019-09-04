@@ -68,7 +68,6 @@ typedef struct{
 static GUILD_LIST g_guild_list={0};
 static DM_LIST g_dm_list={0};
 
-static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
@@ -81,7 +80,7 @@ static void DBGPRINT(const char *fmt,...)
 		add_line_discord_log(tmp);
 	}
 	if(console_active){
-		if(!g_enable_dbgprint)
+		if(!enable_dbg_discord)
 			return;
 		vprintf(fmt,ap);
 	}
@@ -882,7 +881,7 @@ static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *re
 	}
 	res=get_response(c,&resp,&resp_len);
 	if(res){
-		DBGPRINT("response:%s\n",resp);
+		//DBGPRINT("response:%s\n",resp);
 		res=get_resp_code(resp,resp_len);
 		if(200==res){
 			char *content=0;
@@ -3003,6 +3002,9 @@ int main(int argc,char **argv)
 {
 	//test_func();
 	console_active=TRUE;
+	enable_dbg_discord=TRUE;
+	enable_dbg_gateway=TRUE;
+	enable_dbg_irc=TRUE;
 	start_discord();
 	do_wait();
 	return 0;

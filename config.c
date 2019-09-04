@@ -14,6 +14,10 @@ CRITICAL_SECTION g_mutex;
 
 int gui_active=FALSE;
 int console_active=FALSE;
+int enable_dbg_discord=FALSE;
+int enable_dbg_gateway=FALSE;
+int enable_dbg_irc=FALSE;
+
 
 static file_exists(const WCHAR *fname)
 {

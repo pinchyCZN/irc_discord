@@ -4,6 +4,9 @@ extern char g_gateway[80];
 extern int g_timeout;
 extern int gui_active;
 extern int console_active;
+extern int enable_dbg_discord;
+extern int enable_dbg_gateway;
+extern int enable_dbg_irc;
 
 const char *get_user_name();
 const char *get_password();

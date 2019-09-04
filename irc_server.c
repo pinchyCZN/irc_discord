@@ -15,7 +15,6 @@ static int irc_mutex_init=FALSE;
 static char **irc_msg=0;
 static int irc_msg_count=0;
 
-static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
@@ -28,7 +27,7 @@ static void DBGPRINT(const char *fmt,...)
 		add_line_irc_log(tmp);
 	}
 	if(console_active){
-		if(!g_enable_dbgprint)
+		if(!enable_dbg_irc)
 			return;
 		vprintf(fmt,ap);
 	}

@@ -13,7 +13,6 @@ static DWORD g_hbeat_interval=30000;
 static DWORD g_hb_tick_send=0;
 static DWORD g_hb_tick_ack=0;
 
-static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
@@ -26,7 +25,7 @@ static void DBGPRINT(const char *fmt,...)
 		add_line_gateway_log(tmp);
 	}
 	if(console_active){
-		if(!g_enable_dbgprint)
+		if(!enable_dbg_gateway)
 			return;
 		vprintf(fmt,ap);
 	}
