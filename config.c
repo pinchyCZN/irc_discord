@@ -12,6 +12,9 @@ CRITICAL_SECTION g_mutex;
 #define INI_FNAME L"irc_discord.ini"
 //find ini file first in current directory then exe folder
 
+int gui_active=FALSE;
+int console_active=FALSE;
+
 static file_exists(const WCHAR *fname)
 {
 	int result=FALSE;
@@ -130,6 +133,24 @@ static int get_ini_value(const WCHAR *section,const WCHAR *key,char *out,int out
 	return result;
 }
 
+static int get_ini_wchar_str(const WCHAR *section,const WCHAR *key,WCHAR *out,int out_count)
+{
+	int result=FALSE;
+	const WCHAR *fname;
+	fname=get_ini_fname();
+	if(fname){
+		DWORD res;
+		res=GetPrivateProfileStringW(section,key,L"",out,out_count,fname);
+		if(res){
+			if(out_count)
+				out[out_count-1]=0;
+			result=TRUE;
+		}
+	}
+	return result;
+
+}
+
 static int set_ini_value(const WCHAR *section,const WCHAR *key,const WCHAR *str)
 {
 	int result=FALSE;
@@ -143,15 +164,15 @@ static int set_ini_value(const WCHAR *section,const WCHAR *key,const WCHAR *str)
 	return result;
 }
 
-int set_user_name(const WCHAR *user)
+int save_user_name(const WCHAR *user)
 {
 	return set_ini_value(L"SETTINGS",L"USERNAME",user);
 }
-int set_password(const WCHAR *password)
+int save_password(const WCHAR *password)
 {
 	return set_ini_value(L"SETTINGS",L"PASSWORD",password);
 }
-int set_connect_discord(int val)
+int save_connect_discord(int val)
 {
 	WCHAR tmp[20]={0};
 	_snwprintf(tmp,_countof(tmp),L"%u",val);
@@ -187,6 +208,86 @@ int get_irc_port()
 	}
 	return result;
 }
+int save_irc_port(int port)
+{
+	WCHAR tmp[20]={0};
+	_snwprintf(tmp,_countof(tmp),L"%u",port);
+	return set_ini_value(L"SETTINGS",L"IRC_PORT",tmp);
+}
+
+int save_window_pos(WINDOWPLACEMENT *win)
+{
+	int result=FALSE;
+	struct SLIST{
+		int val;
+		const WCHAR *key;
+	};
+	struct SLIST list[]={
+		{win->rcNormalPosition.left,L"LEFT"},
+		{win->rcNormalPosition.right,L"RIGHT"},
+		{win->rcNormalPosition.top,L"TOP"},
+		{win->rcNormalPosition.bottom,L"BOTTOM"},
+		{win->showCmd,L"SHOWCMD"},
+	};
+	int i,count;
+	count=_countof(list);
+	for(i=0;i<count;i++){
+		struct SLIST *tmp=&list[i];
+		WCHAR str[20]={0};
+		_snwprintf(str,_countof(str),L"%u",tmp->val);
+		result=set_ini_value(L"WINDOW_POS",tmp->key,str);
+	}
+	return result;
+}
+int get_window_pos(WINDOWPLACEMENT *win)
+{
+	int result=FALSE;
+	struct SLIST{
+		int *val;
+		const WCHAR *key;
+	};
+	struct SLIST list[]={
+		{&win->rcNormalPosition.left,L"LEFT"},
+		{&win->rcNormalPosition.right,L"RIGHT"},
+		{&win->rcNormalPosition.top,L"TOP"},
+		{&win->rcNormalPosition.bottom,L"BOTTOM"},
+		{&win->showCmd,L"SHOWCMD"},
+	};
+	int i,count,found=0;
+	count=_countof(list);
+	for(i=0;i<count;i++){
+		struct SLIST *tmp=&list[i];
+		WCHAR str[20]={0};
+		int res;
+		res=get_ini_wchar_str(L"WINDOW_POS",tmp->key,str,_countof(str));
+		if(res){
+			tmp->val[0]=_wtoi(str);
+			found++;
+		}
+	}
+	if(found>=count)
+		result=TRUE;
+	return result;
+}
+
+int get_enable_discord()
+{
+	int result=FALSE;
+	WCHAR tmp[20]={0};
+	int res;
+	res=get_ini_wchar_str(L"SETTINGS",L"ENABLE_DISCORD",tmp,_countof(tmp));
+	if(res){
+		result=_wtoi(tmp);
+	}
+	return result;
+}
+int save_enable_discord(int val)
+{
+	WCHAR tmp[20]={0};
+	_snwprintf(tmp,_countof(tmp),L"%u",val&1);
+	return set_ini_value(L"SETTINGS",L"ENABLE_DISCORD",tmp);
+}
+
 
 int validate_ini(int show_msgbox)
 {

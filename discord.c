@@ -72,10 +72,19 @@ static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
-	if(!g_enable_dbgprint)
-		return;
 	va_start(ap,fmt);
-	vprintf(fmt,ap);
+	if(gui_active){
+		void add_line_discord_log(const char *str);
+		static char tmp[4096];
+		_vsnprintf(tmp,sizeof(tmp),fmt,ap);
+		tmp[sizeof(tmp)-1]=0;
+		add_line_discord_log(tmp);
+	}
+	if(console_active){
+		if(!g_enable_dbgprint)
+			return;
+		vprintf(fmt,ap);
+	}
 }
 
 static int remove_all_msg(MESSAGE_LIST *mlist)
@@ -333,7 +342,7 @@ static int merge_new_nicks(NICK_LIST *nlist,MESSAGE_LIST *mlist)
 		m=&mlist->m[i];
 		str=bsearch(&m->author,nlist->nick,nlist->nick_count,sizeof(char*),&my_strcmp);
 		if(0==str){
-			printf("adding nick:%s\n",m->author);
+			DBGPRINT("adding nick:%s\n",m->author);
 			add_nick(nlist,m->author);
 			qsort(nlist->nick,nlist->nick_count,sizeof(char**),&my_strcmp);
 			result++;
@@ -892,12 +901,12 @@ static int do_http_req(CONNECTION *c,const char *req,char **resp_content,int *re
 				}
 			}
 		}else{
-			printf("REQ:\n%s|\n---\n",req);
-			printf("RESP:\n%.*s|\n---\n",resp_len,resp);
+			DBGPRINT("REQ:\n%s|\n---\n",req);
+			DBGPRINT("RESP:\n%.*s|\n---\n",resp_len,resp);
 			save_last_error(resp,resp_len);
 		}
 	}else{
-		printf("failed to get response\n");
+		DBGPRINT("failed to get response\n");
 	}
 	if(resp){
 		free(resp);
@@ -1031,7 +1040,7 @@ static int get_gateway(CONNECTION *c)
 					result=TRUE;
 				}
 			}else{
-				printf("Error paring json to get gateway\n");
+				DBGPRINT("Error paring json to get gateway\n");
 			}
 			json_value_free(root);
 		}
@@ -1127,7 +1136,7 @@ static get_me_user_name(CONNECTION *c,char *uname,int uname_len)
 				val=json_object_get_value(obj,"username");
 				str=json_value_get_string(val);
 				if(str){
-					//printf("USERNAME:%s\n",str);
+					//DBGPRINT("USERNAME:%s\n",str);
 					strncpy(uname,str,uname_len);
 					if(uname_len){
 						uname[uname_len-1]=0;
@@ -1174,7 +1183,7 @@ static int add_json_message_obj(JSON_Object *msg,MESSAGE_LIST *mlist)
 		if(add_message(mlist,&msg)){
 			result=TRUE;
 		}else{
-			printf("Failed to add msg %s\n",id);
+			DBGPRINT("Failed to add msg %s\n",id);
 		}
 	}
 	free(auth);
@@ -1257,8 +1266,8 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 		char *content=0;
 		int content_len=0;
 		int res;
-		//printf("REQ:%s\n",data);
-		//printf("---\n");
+		//DBGPRINT("REQ:%s\n",data);
+		//DBGPRINT("---\n");
 		res=do_http_req(c,data,&content,&content_len);
 		if(res){
 			JSON_Value *root;
@@ -1297,7 +1306,7 @@ static int get_channels_for_guild(CONNECTION *c,const char *guild_id,CHANNEL_LIS
 			json_value_free(root);
 			result=TRUE;
 		}else{
-			printf("failed to get response\n");
+			DBGPRINT("failed to get response\n");
 		}
 		if(content){
 			free(content);
@@ -1391,7 +1400,7 @@ static int get_all_dm_channels(CONNECTION *c,DM_LIST *dlist)
 			json_value_free(root);
 			result=TRUE;
 		}else{
-			printf("failed to get response\n");
+			DBGPRINT("failed to get response\n");
 		}
 		if(content){
 			free(content);
@@ -1519,7 +1528,7 @@ static int post_message(CONNECTION *c,const char *chan_id,const char *msg,MESSAG
 	}
 	json_value_free(root_val);
 	if(!do_post){
-		printf("unable to create POST msg request\n");
+		DBGPRINT("unable to create POST msg request\n");
 		goto ERROR_POST;
 	}
 	{
@@ -1553,7 +1562,7 @@ static int dump_message_list(MESSAGE_LIST *mlist,const char *prefix)
 	for(i=0;i<count;i++){
 		MESSAGE *msg;
 		msg=&mlist->m[i];
-		printf("%s<%s> %s %s %s\n",prefix,msg->author,msg->timestamp,msg->id,msg->msg);
+		DBGPRINT("%s<%s> %s %s %s\n",prefix,msg->author,msg->timestamp,msg->id,msg->msg);
 	}
 	return 0;
 }
@@ -1564,12 +1573,12 @@ static int dump_guild_stuff(GUILD_LIST *glist)
 	for(i=0;i<count;i++){
 		int j,chan_count;
 		GUILD *g=&glist->guild[i];
-		printf("GUILD %s %s\n",g->name,g->id);
+		DBGPRINT("GUILD %s %s\n",g->name,g->id);
 		chan_count=g->channels.count;
 		for(j=0;j<chan_count;j++){
 			CHANNEL *chan;
 			chan=&g->channels.chan[j];
-			printf(" %s %s %s\n",chan->name,chan->topic,chan->id);
+			DBGPRINT(" %s %s %s\n",chan->name,chan->topic,chan->id);
 			dump_message_list(&chan->msgs,"  :");
 		}
 	}
@@ -2060,7 +2069,7 @@ static int process_post_msg(CONNECTION *c,DISCORD_CMD *cmd)
 	chan_msg=seek_next_word(cmd->data);
 	if(0==chan_msg || 0==chan_name[0]){
 		post_irc_server_msg("ERROR unable to extract channel name");	
-		printf("cant find chan data from:%s",cmd->data);
+		DBGPRINT("cant find chan data from:%s",cmd->data);
 		return result;
 	}
 	result=get_channel_obj_from_irc_chan(chan_name,&chan);
@@ -2390,7 +2399,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 	int get_pinned=FALSE;
 	str=cmd->data;
 	get_word(str,chan_name,sizeof(chan_name));
-	printf(">>>process get msgs:%s\n",chan_name);
+	DBGPRINT(">>>process get msgs:%s\n",chan_name);
 	if(!get_channel_obj_from_irc_chan(chan_name,&_chan)){
 		if(!get_dm_chan_from_uname(chan_name,&dm_chan)){
 			char *tmp=0;
@@ -2504,12 +2513,12 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 	}
 	sort_messages(chan_mlist);
 	if(have_msg_range(chan_mlist,msg_id,direction,limit,&mlist)){
-		printf(">>>have messages in range: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
+		DBGPRINT(">>>have messages in range: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
 	}else{
-		printf(">>>calling get messages params: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
+		DBGPRINT(">>>calling get messages params: limit:%i direction:%i msg_id:%s\n",limit,direction,msg_id);
 		get_messages(conn,&mlist,chan_id,limit,direction,msg_id,FALSE);
 	}
-	printf(">>message count:%i\n",mlist.count);
+	DBGPRINT(">>message count:%i\n",mlist.count);
 	if(0==mlist.count){
 		if(g_last_http_error){
 			if(_chan)
@@ -2537,7 +2546,7 @@ static void process_get_msgs(CONNECTION *conn,DISCORD_CMD *cmd)
 				if(chan_mlist->count>=50000){
 					remove_some_messages(chan_mlist,30000);
 				}
-				printf(">>adding message:%s %I64X\n",m->timestamp,m->ftime);
+				DBGPRINT(">>adding message:%s %I64X\n",m->timestamp,m->ftime);
 				add_message(chan_mlist,m);
 				sort_messages(chan_mlist);
 			}
@@ -2564,15 +2573,15 @@ static int process_join_chan(CONNECTION *conn,DISCORD_CMD *cmd)
 	str=cmd->data;
 	extract_guild_chan(str,guild,sizeof(guild),chan,sizeof(chan));
 	print_irc_chan(guild,chan,irc_chan,sizeof(irc_chan));
-	printf("SRC=%s\n",str);
-	printf("guild=%s chan=%s\n",guild,chan);
+	DBGPRINT("SRC=%s\n",str);
+	DBGPRINT("guild=%s chan=%s\n",guild,chan);
 	result=get_channel_obj_from_irc_chan(irc_chan,&target_chan);
 	if(result){
 		char tmp[256];
 		const char *prefix=get_irc_msg_str(OK_JOIN_CHAN);
 		__snprintf(tmp,sizeof(tmp),"%s %s",prefix,irc_chan);
 		push_irc_msg(tmp);
-		printf("OK JOIN CHANNEL: %s\n",irc_chan);
+		DBGPRINT("OK JOIN CHANNEL: %s\n",irc_chan);
 		{
 			char *topic=0;
 			int topic_len;
@@ -2623,7 +2632,7 @@ static void process_create_chan(DISCORD_CMD *cmd)
 	DM_CHAN dm_chan={0};
 	//chan id,uname,uid
 	str=cmd->data;
-	printf("adding DM channel:%s\n",str);
+	DBGPRINT("adding DM channel:%s\n",str);
 	get_word(str,chan_id,sizeof(chan_id));
 	str=seek_next_word(str);
 	get_word(str,nick,sizeof(nick));
@@ -2848,7 +2857,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 				case CMD_RESUME:
 					process_resume(c,&cmd);
 					if(WSAECONNRESET==WSAGetLastError()){
-						printf("ERROR:re-adding discord resume command\n");
+						DBGPRINT("ERROR:re-adding discord resume command\n");
 						add_discord_cmd(cmd.cmd,cmd.data);
 					}
 					break;
@@ -2878,7 +2887,7 @@ static int process_requests(CONNECTION *c,const char *uname)
 			delta=GetTickCount()-tick;
 			if(delta>40000){
 				char tmp[40]={0};
-				//printf("main thread heartbeat\n");
+				//DBGPRINT("main thread heartbeat\n");
 				get_me_user_name(c,tmp,sizeof(tmp));
 				tick=GetTickCount();
 			}
@@ -2908,7 +2917,7 @@ static void discord_thread(void *args)
 	};
 	int state=DISC_CONNECT;
 	char user_name[40]={0};
-	printf("discord_thread started\n");
+	DBGPRINT("discord_thread started\n");
 	while(1){
 		switch(state){
 		case DISC_CONNECT:
@@ -2919,10 +2928,10 @@ static void discord_thread(void *args)
 				g_gateway[0]=0;
 				res=connect_disc(&con);
 				if(res){
-					printf("found token\n");
+					DBGPRINT("found token\n");
 					state=DISC_GET_GUILDS;
 				}else{
-					printf("failed login:%s\n",g_last_http_error);
+					DBGPRINT("failed login:%s\n",g_last_http_error);
 					Sleep(5000);
 				}
 			}
@@ -2969,7 +2978,7 @@ static void discord_thread(void *args)
 			int error;
 			error=WSAGetLastError();
 			if(WSAECONNRESET==error){
-				printf("ERROR: socket error detected\n");
+				DBGPRINT("ERROR: socket error detected\n");
 				state=DISC_CONNECT;
 				Sleep(5000);
 			}
@@ -2979,16 +2988,21 @@ static void discord_thread(void *args)
 
 void start_discord()
 {
-	init_mutex();
-	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
-	_beginthread(&gateway_thread,0,NULL);
-	_beginthread(&discord_thread,0,NULL);
-	_beginthread(&irc_thread,0,NULL);
+	static int started=FALSE;
+	if(!started){
+		started=TRUE;
+		init_mutex();
+		g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
+		_beginthread(&gateway_thread,0,NULL);
+		_beginthread(&discord_thread,0,NULL);
+		_beginthread(&irc_thread,0,NULL);
+	}
 }
 
 int main(int argc,char **argv)
 {
 	//test_func();
+	console_active=TRUE;
 	start_discord();
 	do_wait();
 	return 0;

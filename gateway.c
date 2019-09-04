@@ -12,15 +12,24 @@ static HANDLE g_gwevent=0;
 static DWORD g_hbeat_interval=30000;
 static DWORD g_hb_tick_send=0;
 static DWORD g_hb_tick_ack=0;
-static int g_disable_dbgprint=FALSE;
 
+static int g_enable_dbgprint=FALSE;
 static void DBGPRINT(const char *fmt,...)
 {
 	va_list ap;
-	if(g_disable_dbgprint)
-		return;
 	va_start(ap,fmt);
-	vprintf(fmt,ap);
+	if(gui_active){
+		void add_line_gateway_log(const char *str);
+		static char tmp[4096];
+		_vsnprintf(tmp,sizeof(tmp),fmt,ap);
+		tmp[sizeof(tmp)-1]=0;
+		add_line_gateway_log(tmp);
+	}
+	if(console_active){
+		if(!g_enable_dbgprint)
+			return;
+		vprintf(fmt,ap);
+	}
 }
 
 typedef struct{
@@ -597,7 +606,7 @@ void gateway_thread(void *args)
 							break;
 						}
 						if(WSAECONNRESET==WSAGetLastError()){
-							printf("ERROR: gateway connection reset\n");
+							DBGPRINT("ERROR: gateway connection reset\n");
 							break;
 						}
 					}
@@ -605,7 +614,7 @@ void gateway_thread(void *args)
 				}
 			}
 		}else{
-			printf("Wait error: exiting gateway\n");
+			DBGPRINT("Wait error: exiting gateway\n");
 			break;
 		}
 	}

@@ -15,6 +15,25 @@ static int irc_mutex_init=FALSE;
 static char **irc_msg=0;
 static int irc_msg_count=0;
 
+static int g_enable_dbgprint=FALSE;
+static void DBGPRINT(const char *fmt,...)
+{
+	va_list ap;
+	va_start(ap,fmt);
+	if(gui_active){
+		void add_line_irc_log(const char *str);
+		static char tmp[4096];
+		_vsnprintf(tmp,sizeof(tmp),fmt,ap);
+		tmp[sizeof(tmp)-1]=0;
+		add_line_irc_log(tmp);
+	}
+	if(console_active){
+		if(!g_enable_dbgprint)
+			return;
+		vprintf(fmt,ap);
+	}
+}
+
 /*
 ":my.server.name 001 test123 :Welcome to the Internet Relay Network test123"
 "PING :675028717"
@@ -264,7 +283,7 @@ static int handle_msg(mbedtls_net_context *ctx,const char *str,const char *nick)
 		}
 		break;
 	default:
-		printf("ERROR:unhandled code:%i\n",code);
+		DBGPRINT("ERROR:unhandled code:%i\n",code);
 		break;
 	}
 	if(tmp[0]){
@@ -405,7 +424,7 @@ static int handle_connection(mbedtls_net_context *ctx)
 		has_error=FALSE;
 		res=data_avail(ctx,30,&has_error);
 		if(has_error){
-			printf("IRC socket select error\n");
+			DBGPRINT("IRC socket select error\n");
 			break;
 		}
 		if(res){
@@ -415,7 +434,7 @@ static int handle_connection(mbedtls_net_context *ctx)
 				break;
 			}
 			trim_right(line);
-			printf("RECV:%s\n",line);
+			DBGPRINT("RECV:%s\n",line);
 			switch(state){
 			case 0:
 				if(startswithi(line,"USER ")){
@@ -425,7 +444,7 @@ static int handle_connection(mbedtls_net_context *ctx)
 					sscanf(line,"%*s%79s",nick);
 				}
 				if(nick[0]!=0 && name[0]!=0){
-					printf("nick=%s name=%s\n",nick,name);
+					DBGPRINT("nick=%s name=%s\n",nick,name);
 					state=1;
 				}
 				break;
@@ -551,15 +570,15 @@ void irc_thread(void *args)
 	mbedtls_net_init(&ctx);
 	res=mbedtls_net_bind(&ctx,host,str,MBEDTLS_NET_PROTO_TCP);
 	if(0!=res){
-		printf("failed to bind to %s:%i\n",host,port);
+		DBGPRINT("failed to bind to %s:%i\n",host,port);
 		return;
 	}
 	while(1){
 		mbedtls_net_context client={0};
-		printf("IRC server waiting for connection\n");
+		DBGPRINT("IRC server waiting for connection\n");
 		res=mbedtls_net_accept(&ctx,&client,0,0,0);
 		if(0==res){
-			printf("connection accepted\n");
+			DBGPRINT("connection accepted\n");
 			handle_connection(&client);
 			mbedtls_net_free(&client);
 		}else{

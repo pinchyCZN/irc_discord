@@ -58,11 +58,141 @@ static int print_lasterror()
 	return 0;
 }
 
+int init_settings(HWND hwnd)
+{
+	int result=FALSE;
+	typedef struct{
+		int id;
+		const char *(*func)();
+	}SLIST;
+	SLIST list[]={
+		{IDC_USER_NAME,&get_user_name},
+		{IDC_PASSWORD,&get_password},
+	};
+	int id_list[]={
+		IDC_USER_NAME,IDC_PASSWORD,IDC_IRC_PORT
+	};
+	int i,count;
+	if(0==hwnd)
+		return result;
+	count=_countof(id_list);
+	for(i=0;i<count;i++){
+		SendDlgItemMessage(hwnd,id_list[i],EM_SETLIMITTEXT,512,0);
+	}
+	count=_countof(list);
+	for(i=0;i<count;i++){
+		SLIST *blah=&list[i];
+		const char *str;
+		WCHAR *tmp;
+		str=blah->func();
+		tmp=utf2wchar(str);
+		if(tmp){
+			int id=blah->id;
+			SetDlgItemTextW(hwnd,id,tmp);
+			free(tmp);
+			result=TRUE;
+		}
+	}
+	if(get_enable_discord()){
+		CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
+	}
+	{
+		int val=get_irc_port();
+		WCHAR tmp[20]={0};
+		_snwprintf(tmp,_countof(tmp),L"%u",val);
+		SetDlgItemTextW(hwnd,IDC_IRC_PORT,tmp);
+	}
+	return result;
+}
+
+int save_settings(HWND hwnd)
+{
+	int result=FALSE;
+	typedef struct{
+		int id;
+		union f{
+			int (*func1)(WCHAR*);
+			int (*func2)(int);
+		};
+		int type;
+	}SLIST;
+	SLIST list[]={
+		{IDC_USER_NAME,&save_user_name,0},
+		{IDC_PASSWORD,&save_password,0},
+		{IDC_ENABLE_DISCORD,&save_enable_discord,1},
+		{IDC_IRC_PORT,&save_irc_port,2},
+	};
+	int i,count;
+	if(0==hwnd)
+		return result;
+	count=_countof(list);
+	for(i=0;i<count;i++){
+		SLIST *blah=&list[i];
+		int type=blah->type;
+		if(0==type){
+			WCHAR str[256]={0};
+			GetDlgItemTextW(hwnd,blah->id,str,_countof(str));
+			blah->func1(str);
+		}else if(1==type){
+			int res=IsDlgButtonChecked(hwnd,blah->id);
+			int val=0;
+			if(BST_CHECKED==res)
+				val=1;
+			blah->func2(val);
+		}else if(2==type){
+			WCHAR tmp[20]={0};
+			int val;
+			GetDlgItemTextW(hwnd,blah->id,tmp,_countof(tmp));
+			val=_wtoi(tmp);
+			blah->func2(val);
+		}
+	}
+	return result;
+
+}
+
 static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	switch(msg){
 	case WM_INITDIALOG:
 		{
+			HWND hpwd=GetDlgItem(hwnd,IDC_PASSWORD);
+			if(hpwd){
+				const WCHAR *g=(WCHAR*)"\x95\x00";
+				SendMessage(hpwd,EM_SETPASSWORDCHAR,g[0],0);
+			}
+			init_settings(hwnd);
+		}
+		break;
+	case WM_COMMAND:
+		switch(LOWORD(wparam)){
+		case IDC_SHOW_PASSWORD:
+			{
+				int res=IsDlgButtonChecked(hwnd,IDC_SHOW_PASSWORD);
+				if(BST_CHECKED==res){
+					SendDlgItemMessage(hwnd,IDC_PASSWORD,EM_SETPASSWORDCHAR,0,0);
+				}else{
+					const WCHAR *g=(WCHAR*)"\x95\x00";
+					SendDlgItemMessage(hwnd,IDC_PASSWORD,EM_SETPASSWORDCHAR,g[0],0);
+				}
+				InvalidateRect(GetDlgItem(hwnd,IDC_PASSWORD),NULL,TRUE);
+			}
+			break;
+		case IDC_SAVE_SETTINGS:
+			{
+				int code=HIWORD(wparam);
+				if(BN_CLICKED==code)
+					save_settings(hwnd);
+			}
+			break;
+		case IDC_ENABLE_DISCORD:
+			{
+				int res=IsDlgButtonChecked(hwnd,IDC_ENABLE_DISCORD);
+				if(BST_CHECKED==res){
+					start_discord();
+				}
+			}
+			break;
 		}
 		break;
 	case WM_SIZE:
@@ -247,35 +377,26 @@ void add_line_gateway_log(const char *str)
 	set_hedit_str(HWND_EDIT_GATEWAY,str);
 }
 
-int init_settings(HWND hwnd)
+
+int init_dlg_pos(HWND hwnd)
 {
-	int result=FALSE;
-	typedef struct{
-		int id;
-		const char *(*func)();
-	}SLIST;
-	SLIST list[]={
-		{IDC_USER_NAME,&get_user_name},
-		{IDC_PASSWORD,&get_password},
-	};
-	int i,count;
-	if(0==hwnd)
-		return result;
-	count=_countof(list);
-	for(i=0;i<count;i++){
-		SLIST *blah=&list[i];
-		const char *str;
-		WCHAR *tmp;
-		str=blah->func();
-		tmp=utf2wchar(str);
-		if(tmp){
-			int id=blah->id;
-			SetDlgItemTextW(hwnd,id,tmp);
-			free(tmp);
-			result=TRUE;
-		}
-	}
-	return result;
+	HWND hdesk;
+	WINDOWPLACEMENT wp={0};
+	RECT rect={0};
+	wp.length=sizeof(wp);
+	hdesk=GetDesktopWindow();
+	GetWindowRect(hdesk,&rect);
+	return TRUE;
+}
+
+int end_dialog(HWND hwnd)
+{
+	WINDOWPLACEMENT wp={0};
+	wp.length=sizeof(wp);
+	GetWindowPlacement(hwnd,&wp);
+	save_window_pos(&wp);
+	EndDialog(hwnd,0);
+	return TRUE;
 }
 
 static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
@@ -283,20 +404,18 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 	switch(msg){
 	case WM_INITDIALOG:
 		{
-			HWND hsettings;
 			HWND htab=GetDlgItem(hwnd,IDC_TAB_SHEET);
-			SetWindowPos(hwnd,NULL,500,500,0,0,SWP_NOSIZE|SWP_SHOWWINDOW|SWP_NOZORDER);
 			AnchorInit(hwnd,anchor_main,_countof(anchor_main));
-			hsettings=add_tab_page(htab,IDD_SETTINGS,&settings_func,"settings");
+			add_tab_page(htab,IDD_SETTINGS,&settings_func,"settings");
 			add_tab_page(htab,IDD_LOG_IRC,&log_irc_func,"IRC log");
 			add_tab_page(htab,IDD_LOG_DISCORD,&log_discord_func,"discord log");
 			add_tab_page(htab,IDD_LOG_GATEWAY,&log_gateway_func,"gateway log");
 			TabCtrl_SetCurFocus(htab,0);
 			show_tab_index(0);
 			get_hedit_list();
-			init_settings(hsettings);
+			init_dlg_pos(hwnd);
 			//start_discord();
-	}
+		}
 		break;
 	case WM_NOTIFY:
 		{
@@ -335,7 +454,7 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 			case IDOK:
 				break;
 			case IDCANCEL:
-				EndDialog(hwnd,0);
+				end_dialog(hwnd);
 				break;
 			}
 		}
@@ -343,9 +462,12 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 	}
 	return FALSE;
 }
+
 int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show)
 {
+	gui_active=TRUE;
 	g_hinstance=hinst;
 	InitCommonControls();
+	LoadLibrary("RICHED20.DLL");
 	DialogBox(hinst,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,dlg_func);
 }
