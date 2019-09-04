@@ -2977,14 +2977,19 @@ static void discord_thread(void *args)
 	}
 }
 
-int main(int argc,char **argv)
+void start_discord()
 {
-	//test_func();
 	init_mutex();
 	g_event=CreateEventA(NULL,FALSE,FALSE,"discord_event");
 	_beginthread(&gateway_thread,0,NULL);
 	_beginthread(&discord_thread,0,NULL);
 	_beginthread(&irc_thread,0,NULL);
+}
+
+int main(int argc,char **argv)
+{
+	//test_func();
+	start_discord();
 	do_wait();
 	return 0;
 }

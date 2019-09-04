@@ -14,3 +14,4 @@ enum{
 };
 
 int add_discord_cmd(int cmd,const char *cmd_data);
+void start_discord();

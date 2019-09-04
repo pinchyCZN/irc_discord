@@ -645,3 +645,50 @@ int get_str_chunk(const char *str,int chunk_size,int jitter)
 EXIT:
 	return result;
 }
+
+char *wchar2utf(const WCHAR *str)
+{
+	char *result=0;
+	char *tmp=0;
+	int len,tmp_size;
+	len=WideCharToMultiByte(CP_UTF8,0,str,-1,NULL,0,NULL,NULL);
+	if(0==len)
+		return result;
+	tmp_size=len;
+	tmp=calloc(tmp_size,1);
+	if(tmp){
+		int res;
+		res=WideCharToMultiByte(CP_UTF8,0,str,-1,tmp,tmp_size,NULL,NULL);
+		if(res==len){
+			tmp[tmp_size-1]=0;
+			result=tmp;
+		}else{
+			free(tmp);
+		}
+	}
+	return result;
+}
+
+WCHAR *utf2wchar(const char *str)
+{
+	WCHAR *result=0;
+	WCHAR *tmp;
+	int tmp_size;
+	int count;
+	count=MultiByteToWideChar(CP_UTF8,0,str,-1,NULL,0);
+	if(0==count)
+		return result;
+	tmp_size=count*sizeof(WCHAR);
+	tmp=calloc(tmp_size,1);
+	if(tmp){
+		int res;
+		res=MultiByteToWideChar(CP_UTF8,0,str,-1,tmp,count);
+		if(res==count){
+			tmp[count-1]=0;
+			result=tmp;
+		}else{
+			free(tmp);
+		}
+	}
+	return result;
+}

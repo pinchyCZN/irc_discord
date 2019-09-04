@@ -47,3 +47,7 @@ void time_str_to_ftime(const char *str,__int64 *val);
 __int64 get_current_ftime();
 
 int get_str_chunk(const char *str,int chunk_size,int jitter);
+
+char *wchar2utf(const WCHAR *str);
+
+WCHAR *utf2wchar(const char *str);

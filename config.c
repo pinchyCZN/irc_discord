@@ -130,6 +130,34 @@ static int get_ini_value(const WCHAR *section,const WCHAR *key,char *out,int out
 	return result;
 }
 
+static int set_ini_value(const WCHAR *section,const WCHAR *key,const WCHAR *str)
+{
+	int result=FALSE;
+	const WCHAR *fname;
+	fname=get_ini_fname();
+	if(fname){
+		DWORD res;
+		res=WritePrivateProfileStringW(section,key,str,fname);
+		result=res;
+	}
+	return result;
+}
+
+int set_user_name(const WCHAR *user)
+{
+	return set_ini_value(L"SETTINGS",L"USERNAME",user);
+}
+int set_password(const WCHAR *password)
+{
+	return set_ini_value(L"SETTINGS",L"PASSWORD",password);
+}
+int set_connect_discord(int val)
+{
+	WCHAR tmp[20]={0};
+	_snwprintf(tmp,_countof(tmp),L"%u",val);
+	return set_ini_value(L"SETTINGS",L"CONNECT",tmp);
+}
+
 const char *get_user_name()
 {
 	static char user[255]={0};
