@@ -404,6 +404,7 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 	switch(msg){
 	case WM_INITDIALOG:
 		{
+			HICON hicon;
 			HWND htab=GetDlgItem(hwnd,IDC_TAB_SHEET);
 			AnchorInit(hwnd,anchor_main,_countof(anchor_main));
 			add_tab_page(htab,IDD_SETTINGS,&settings_func,"settings");
@@ -414,6 +415,12 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 			show_tab_index(0);
 			get_hedit_list();
 			init_dlg_pos(hwnd);
+			hicon=LoadIcon(g_hinstance,MAKEINTRESOURCE(IDI_ICON1));
+			if(hicon){
+				SendMessage(hwnd,WM_SETICON,ICON_BIG,hicon);
+				SendMessage(hwnd,WM_SETICON,ICON_SMALL,hicon);
+			}
+
 			//start_discord();
 		}
 		break;
