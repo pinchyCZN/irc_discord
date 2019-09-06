@@ -19,7 +19,7 @@ int save_irc_port(int port);
 int save_connect_discord(int val);
 
 int save_window_pos(WINDOWPLACEMENT *);
-int get_window_pos(WINDOWPLACEMENT *);
+int load_window_pos(WINDOWPLACEMENT *);
 
-int get_enable_discord();
+int load_enable_discord();
 int save_enable_discord(int val);

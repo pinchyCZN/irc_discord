@@ -27,3 +27,7 @@ int SnapWindow(HWND hwnd,RECT *rect);
 int SnapSizing(HWND hwnd,RECT *rect,int side);
 
 int ClampMinWindowSize(RECT *default_size,int side,RECT *srect);
+
+int clamp_min_rect(RECT *rect,int min_w,int min_h);
+int clamp_max_rect(RECT *rect,int max_w,int max_h);
+int clamp_nearest_screen(RECT *rect);

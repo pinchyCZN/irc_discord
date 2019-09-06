@@ -93,7 +93,7 @@ int init_settings(HWND hwnd)
 			result=TRUE;
 		}
 	}
-	if(get_enable_discord()){
+	if(load_enable_discord()){
 		CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
 	}
 	{
@@ -380,12 +380,17 @@ void add_line_gateway_log(const char *str)
 
 int init_dlg_pos(HWND hwnd)
 {
-	HWND hdesk;
 	WINDOWPLACEMENT wp={0};
-	RECT rect={0};
-	wp.length=sizeof(wp);
-	hdesk=GetDesktopWindow();
-	GetWindowRect(hdesk,&rect);
+	if(load_window_pos(&wp)){
+		wp.length=sizeof(wp);
+		wp.showCmd=SW_SHOWNORMAL;
+		wp.flags=0;
+		clamp_min_rect(&wp.rcNormalPosition,200,200);
+		clamp_max_rect(&wp.rcNormalPosition,1000,1000);
+		clamp_nearest_screen(&wp.rcNormalPosition);
+		SetWindowPlacement(hwnd,&wp);
+	}else{ //center screen
+	}
 	return TRUE;
 }
 
@@ -420,7 +425,6 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 				SendMessage(hwnd,WM_SETICON,ICON_BIG,hicon);
 				SendMessage(hwnd,WM_SETICON,ICON_SMALL,hicon);
 			}
-
 			//start_discord();
 		}
 		break;

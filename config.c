@@ -243,7 +243,7 @@ int save_window_pos(WINDOWPLACEMENT *win)
 	}
 	return result;
 }
-int get_window_pos(WINDOWPLACEMENT *win)
+int load_window_pos(WINDOWPLACEMENT *win)
 {
 	int result=FALSE;
 	struct SLIST{
@@ -274,7 +274,7 @@ int get_window_pos(WINDOWPLACEMENT *win)
 	return result;
 }
 
-int get_enable_discord()
+int load_enable_discord()
 {
 	int result=FALSE;
 	WCHAR tmp[20]={0};

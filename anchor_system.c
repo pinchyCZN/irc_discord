@@ -310,3 +310,80 @@ int ClampMinWindowSize(RECT *default_size,int side,RECT *srect)
 	}
 	return processed;
 }
+
+int clamp_min_rect(RECT *rect,int min_w,int min_h)
+{
+	int w,h;
+	int delta;
+	w=rect->right-rect->left;
+	h=rect->bottom-rect->top;
+	if(w<min_w){
+		delta=min_w-w;
+		rect->right+=delta;
+	}
+	if(h<min_h){
+		delta=min_h-h;
+		rect->bottom+=delta;
+	}
+	return TRUE;
+}
+int clamp_max_rect(RECT *rect,int max_w,int max_h)
+{
+	int w,h;
+	int delta;
+	w=rect->right-rect->left;
+	h=rect->bottom-rect->top;
+	if(w>max_w){
+		delta=w-max_w;
+		rect->right-=delta;
+	}
+	if(h>max_h){
+		delta=h-max_h;
+		rect->bottom-=delta;
+	}
+	return TRUE;
+}
+
+int clamp_nearest_screen(RECT *rect)
+{
+	int result=FALSE;
+	HMONITOR hmon;
+	hmon=MonitorFromRect(rect,MONITOR_DEFAULTTONEAREST);
+	if(hmon){
+		MONITORINFO mi;
+		mi.cbSize=sizeof(mi);
+		if(GetMonitorInfo(hmon,&mi)){
+			RECT rmon;
+			int left,right,top,bottom;
+			int w,h;
+			int delta;
+			rmon=mi.rcWork;
+			left=rmon.left;
+			right=rmon.right;
+			top=rmon.top;
+			bottom=rmon.bottom;
+			w=rect->right-rect->left;
+			h=rect->bottom-rect->top;
+			if(rect->right>right){
+				delta=rect->right-right;
+				rect->right=right;
+				rect->left-=delta;
+			}
+			if(rect->bottom>bottom){
+				delta=rect->bottom-bottom;
+				rect->bottom=bottom;
+				rect->top-=delta;
+			}
+			if(rect->top<top){
+				rect->top=top;
+				rect->bottom=top+h;
+			}
+			if(rect->left<left){
+				rect->left=left;
+				rect->right=left+w;
+			}
+			result=TRUE;
+		}
+	}
+	return result;
+}
