@@ -238,7 +238,7 @@ int save_window_pos(WINDOWPLACEMENT *win)
 	for(i=0;i<count;i++){
 		struct SLIST *tmp=&list[i];
 		WCHAR str[20]={0};
-		_snwprintf(str,_countof(str),L"%u",tmp->val);
+		_snwprintf(str,_countof(str),L"%i",tmp->val);
 		result=set_ini_value(L"WINDOW_POS",tmp->key,str);
 	}
 	return result;

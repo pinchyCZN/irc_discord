@@ -18,7 +18,7 @@ typedef struct{
 	char text[80];
 }TAB_DATA;
 
-TAB_DATA tab_data[8]={0};
+static TAB_DATA tab_data[8]={0};
 
 static HWND hedit_list[3]={0};
 enum{
@@ -47,6 +47,27 @@ static struct CONTROL_ANCHOR anchor_main[]={
 	{IDOK,ANCHOR_LEFT|ANCHOR_BOTTOM,0,0,0},
 	{IDCANCEL,ANCHOR_RIGHT|ANCHOR_BOTTOM,0,0,0},
 };
+
+static void add_hedit_str(int index,const char *str)
+{
+	HWND hedit=hedit_list[index];
+	if(0==hedit || 0==str)
+		return;
+	SendMessage(hedit,EM_SETSEL,-1,-1);
+	SendMessage(hedit,EM_REPLACESEL,FALSE,(LPARAM)str);
+}
+void add_line_irc_log(const char *str)
+{
+	add_hedit_str(HWND_EDIT_IRC,str);
+}
+void add_line_discord_log(const char *str)
+{
+	add_hedit_str(HWND_EDIT_DISCORD,str);
+}
+void add_line_gateway_log(const char *str)
+{
+	add_hedit_str(HWND_EDIT_GATEWAY,str);
+}
 
 static int print_lasterror()
 {
@@ -116,12 +137,15 @@ int save_settings(HWND hwnd)
 		};
 		int type;
 	}SLIST;
+#pragma warning(push)
+#pragma warning(disable:4028)
 	SLIST list[]={
 		{IDC_USER_NAME,&save_user_name,0},
 		{IDC_PASSWORD,&save_password,0},
 		{IDC_ENABLE_DISCORD,&save_enable_discord,1},
 		{IDC_IRC_PORT,&save_irc_port,2},
 	};
+#pragma warning(pop)
 	int i,count;
 	if(0==hwnd)
 		return result;
@@ -207,13 +231,43 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 	return FALSE;
 }
 
+static WNDPROC old_edit_proc=0;
+LRESULT CALLBACK edit_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
+{
+	switch(msg){
+	case WM_KEYDOWN:
+		{
+			if(VK_TAB==wparam){
+				if(0x8000&GetKeyState(VK_CONTROL)){
+					return 0;
+				}
+			}
+		}
+		break;
+	}
+	return CallWindowProc(old_edit_proc,hwnd,msg,wparam,lparam);
+}
+
 static BOOL CALLBACK log_irc_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	switch(msg){
 	case WM_INITDIALOG:
-	{
-	}
-	break;
+		{
+			HWND hedit=GetDlgItem(hwnd,IDC_EDIT_IRC_LOG);
+			if(hedit){
+				old_edit_proc=(WNDPROC)SetWindowLongPtr(hedit,GWL_WNDPROC,(LONG)&edit_func);
+			}
+		}
+		break;
+	case WM_SHOWWINDOW:
+		if(wparam && 0==lparam)
+		{
+			HWND hedit=GetDlgItem(hwnd,IDC_EDIT_IRC_LOG);
+			if(hedit){
+				SetFocus(hedit);
+			}
+		}
+		break;
 	case WM_SIZE:
 		AnchorResize(hwnd,anchor_log_irc,_countof(anchor_log_irc));
 		break;
@@ -229,9 +283,18 @@ static BOOL CALLBACK log_gateway_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM 
 {
 	switch(msg){
 	case WM_INITDIALOG:
-	{
-	}
-	break;
+		{
+		}
+		break;
+	case WM_SHOWWINDOW:
+		if(wparam && 0==lparam)
+		{
+			HWND hedit=GetDlgItem(hwnd,IDC_EDIT_GATEWAY_LOG);
+			if(hedit){
+				SetFocus(hedit);
+			}
+		}
+		break;
 	case WM_SIZE:
 		AnchorResize(hwnd,anchor_log_gateway,_countof(anchor_log_gateway));
 		break;
@@ -247,9 +310,18 @@ static BOOL CALLBACK log_discord_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM 
 {
 	switch(msg){
 	case WM_INITDIALOG:
-	{
-	}
-	break;
+		{
+		}
+		break;
+	case WM_SHOWWINDOW:
+		if(wparam && 0==lparam)
+		{
+			HWND hedit=GetDlgItem(hwnd,IDC_EDIT_DISCORD_LOG);
+			if(hedit){
+				SetFocus(hedit);
+			}
+		}
+		break;
 	case WM_SIZE:
 		AnchorResize(hwnd,anchor_log_discord,_countof(anchor_log_discord));
 		break;
@@ -356,37 +428,21 @@ static int get_hedit_list()
 	}
 	return 0;
 }
-static void set_hedit_str(int index,const char *str)
-{
-	HWND hedit=hedit_list[index];
-	if(0==hedit || 0==str)
-		return;
-	SendMessage(hedit,EM_SETSEL,-1,-1);
-	SendMessage(hedit,EM_REPLACESEL,FALSE,(LPARAM)str);
-}
-void add_line_irc_log(const char *str)
-{
-	set_hedit_str(HWND_EDIT_IRC,str);
-}
-void add_line_discord_log(const char *str)
-{
-	set_hedit_str(HWND_EDIT_DISCORD,str);
-}
-void add_line_gateway_log(const char *str)
-{
-	set_hedit_str(HWND_EDIT_GATEWAY,str);
-}
-
 
 int init_dlg_pos(HWND hwnd)
 {
 	WINDOWPLACEMENT wp={0};
+	RECT rect={0};
+	int w,h;
+	GetWindowRect(hwnd,&rect);
+	w=rect.right-rect.left;
+	h=rect.bottom-rect.top;
 	if(load_window_pos(&wp)){
 		wp.length=sizeof(wp);
 		wp.showCmd=SW_SHOWNORMAL;
 		wp.flags=0;
-		clamp_min_rect(&wp.rcNormalPosition,200,200);
-		clamp_max_rect(&wp.rcNormalPosition,1000,1000);
+		clamp_min_rect(&wp.rcNormalPosition,w*7/8,h*7/8);
+		clamp_max_rect(&wp.rcNormalPosition,w*2,h*2);
 		clamp_nearest_screen(&wp.rcNormalPosition);
 		SetWindowPlacement(hwnd,&wp);
 	}else{ //center screen
@@ -422,8 +478,8 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 			init_dlg_pos(hwnd);
 			hicon=LoadIcon(g_hinstance,MAKEINTRESOURCE(IDI_ICON1));
 			if(hicon){
-				SendMessage(hwnd,WM_SETICON,ICON_BIG,hicon);
-				SendMessage(hwnd,WM_SETICON,ICON_SMALL,hicon);
+				SendMessage(hwnd,WM_SETICON,ICON_BIG,(LPARAM)hicon);
+				SendMessage(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)hicon);
 			}
 			//start_discord();
 		}

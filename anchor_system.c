@@ -315,6 +315,8 @@ int clamp_min_rect(RECT *rect,int min_w,int min_h)
 {
 	int w,h;
 	int delta;
+	if(rect->left>rect->right || rect->top>rect->bottom)
+		memset(rect,0,sizeof(RECT));
 	w=rect->right-rect->left;
 	h=rect->bottom-rect->top;
 	if(w<min_w){
@@ -331,6 +333,8 @@ int clamp_max_rect(RECT *rect,int max_w,int max_h)
 {
 	int w,h;
 	int delta;
+	if(rect->left>rect->right || rect->top>rect->bottom)
+		memset(rect,0,sizeof(RECT));
 	w=rect->right-rect->left;
 	h=rect->bottom-rect->top;
 	if(w>max_w){
@@ -356,7 +360,6 @@ int clamp_nearest_screen(RECT *rect)
 			RECT rmon;
 			int left,right,top,bottom;
 			int w,h;
-			int delta;
 			rmon=mi.rcWork;
 			left=rmon.left;
 			right=rmon.right;
@@ -365,14 +368,12 @@ int clamp_nearest_screen(RECT *rect)
 			w=rect->right-rect->left;
 			h=rect->bottom-rect->top;
 			if(rect->right>right){
-				delta=rect->right-right;
 				rect->right=right;
-				rect->left-=delta;
+				rect->left=right-w;
 			}
 			if(rect->bottom>bottom){
-				delta=rect->bottom-bottom;
 				rect->bottom=bottom;
-				rect->top-=delta;
+				rect->top=bottom-h;
 			}
 			if(rect->top<top){
 				rect->top=top;
