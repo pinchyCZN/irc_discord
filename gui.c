@@ -1,7 +1,10 @@
 #include <Windows.h>
 #include <CommCtrl.h>
 #include <stdio.h>
+#include <fcntl.h>
+#include <io.h>
 #include "resource.h"
+
 #include "anchor_system.h"
 #include "discord.h"
 #include "config.h"
@@ -32,6 +35,7 @@ static struct CONTROL_ANCHOR anchor_settings[]={
 	{IDC_PASSWORD,ANCHOR_LEFT|ANCHOR_RIGHT|ANCHOR_TOP,0,0,0},
 	{IDC_SHOW_PASSWORD,ANCHOR_RIGHT|ANCHOR_TOP,0,0,0},
 	{IDC_SAVE_SETTINGS,ANCHOR_RIGHT|ANCHOR_BOTTOM,0,0,0},
+	{IDC_RELOAD,ANCHOR_LEFT|ANCHOR_BOTTOM,0,0,0},
 };
 static struct CONTROL_ANCHOR anchor_log_irc[]={
 	{IDC_EDIT_IRC_LOG,ANCHOR_LEFT|ANCHOR_RIGHT|ANCHOR_TOP|ANCHOR_BOTTOM,0,0,0},
@@ -48,6 +52,46 @@ static struct CONTROL_ANCHOR anchor_main[]={
 	{IDCANCEL,ANCHOR_RIGHT|ANCHOR_BOTTOM,0,0,0},
 };
 
+void open_console()
+{
+	static int consoleallocated=FALSE;
+	static int consolecreated=FALSE;
+	HWND hwnd;
+	static int hcrt=0;
+	if(!consoleallocated){
+		consoleallocated=AllocConsole();
+	}
+	hwnd=GetConsoleWindow();
+	if(0==hwnd)
+		return;
+	if(consolecreated){
+		HWND hcon;
+		ShowWindow(hwnd,SW_SHOW);
+		SetForegroundWindow(hwnd);
+		hcon=(HWND)GetStdHandle(STD_INPUT_HANDLE);
+		FlushConsoleInputBuffer(hcon);
+		return;
+	}
+	if(0==hcrt){
+		hcrt=_open_osfhandle((long)GetStdHandle(STD_OUTPUT_HANDLE),_O_TEXT);
+	}
+	if(hcrt!=0){
+		static FILE *hf=0;
+		ShowWindow(hwnd,SW_SHOW);
+		SetForegroundWindow(hwnd);
+		fflush(stdin);
+		if(0==hf){
+			hf=_fdopen(hcrt,"w");
+		}
+		if(hf){
+			FILE *f=stdout;
+			memcpy(f,hf,5*sizeof(int)+3*sizeof(void*));
+			//*f=*hf;
+			setvbuf(stdout,NULL,_IONBF,0);
+			consolecreated=TRUE;
+		}
+	}
+}
 static void add_hedit_str(int index,const char *str)
 {
 	HWND hedit=hedit_list[index];
@@ -217,6 +261,9 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 				}
 			}
 			break;
+		case IDC_RELOAD:
+			init_settings(hwnd);
+			break;
 		}
 		break;
 	case WM_SIZE:
@@ -231,32 +278,11 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 	return FALSE;
 }
 
-static WNDPROC old_edit_proc=0;
-LRESULT CALLBACK edit_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
-{
-	switch(msg){
-	case WM_KEYDOWN:
-		{
-			if(VK_TAB==wparam){
-				if(0x8000&GetKeyState(VK_CONTROL)){
-					return 0;
-				}
-			}
-		}
-		break;
-	}
-	return CallWindowProc(old_edit_proc,hwnd,msg,wparam,lparam);
-}
-
 static BOOL CALLBACK log_irc_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	switch(msg){
 	case WM_INITDIALOG:
 		{
-			HWND hedit=GetDlgItem(hwnd,IDC_EDIT_IRC_LOG);
-			if(hedit){
-				old_edit_proc=(WNDPROC)SetWindowLongPtr(hedit,GWL_WNDPROC,(LONG)&edit_func);
-			}
 		}
 		break;
 	case WM_SHOWWINDOW:
@@ -403,6 +429,26 @@ static HWND add_tab_page(HWND htab,int idd,DLGPROC dlg_proc,char *text)
 	return result;
 }
 
+static void next_tab(HWND hwnd,int dir)
+{
+	HWND htab;
+	int index,count;
+	htab=GetDlgItem(hwnd,IDC_TAB_SHEET);
+	if(0==htab)
+		return;
+	index=TabCtrl_GetCurSel(htab);
+	count=TabCtrl_GetItemCount(htab);
+	if(index<0 || count<=0)
+		return;
+	index+=dir;
+	if(index<0)
+		index=count-1;
+	else if(index>=count)
+		index=0;
+	TabCtrl_SetCurSel(htab,index);
+	show_tab_index(index);
+}
+
 static int get_hedit_list()
 {
 	int id_list[]={
@@ -456,7 +502,7 @@ int end_dialog(HWND hwnd)
 	wp.length=sizeof(wp);
 	GetWindowPlacement(hwnd,&wp);
 	save_window_pos(&wp);
-	EndDialog(hwnd,0);
+	PostQuitMessage(0);
 	return TRUE;
 }
 
@@ -532,9 +578,55 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 
 int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show)
 {
+	MSG msg;
+	int res;
+	HWND hwnd;
 	gui_active=TRUE;
 	g_hinstance=hinst;
 	InitCommonControls();
 	LoadLibrary("RICHED20.DLL");
-	DialogBox(hinst,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,dlg_func);
+	open_console();
+	//DialogBox(hinst,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,dlg_func);
+	hwnd=CreateDialog(g_hinstance,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,&dlg_func);
+	if(0==hwnd){
+		MessageBoxA(NULL,"Unable to create dialog","ERROR",MB_OK|MB_SYSTEMMODAL);
+	}
+	while((res = GetMessage(&msg,NULL,0,0)) != 0){
+		if(res == -1){
+			MessageBoxA(NULL,"Error processing message","ERROR",MB_OK|MB_SYSTEMMODAL);
+			break;
+		}
+		if(WM_KEYDOWN==msg.message){
+			int key=msg.wParam;
+			if(VK_TAB==key){
+				int ctrl;
+				ctrl=0x8000&GetKeyState(VK_CONTROL);
+				if(ctrl){
+					int dir=1;
+					int shift=0x8000&GetKeyState(VK_SHIFT);
+					if(shift){
+						dir=-1;
+					}
+					next_tab(hwnd,dir);
+					printf("tab key\n");
+					continue;
+				}
+			}else if(VK_F5==key){
+				HWND htab=GetDlgItem(hwnd,IDC_TAB_SHEET);
+				if(htab){
+					HWND hsettings=tab_data[0].hwnd;
+					if(hsettings){
+						SendMessage(hsettings,WM_COMMAND,MAKEWPARAM(IDC_RELOAD,0),0);
+						continue;
+					}
+				}
+			}
+		}
+		if(!IsWindow(hwnd) || !IsDialogMessage(hwnd,&msg))
+		{
+			printf("translated msg %08X\n",msg.message);
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+	}
 }
