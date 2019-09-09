@@ -22,7 +22,6 @@
 #define IDC_CONNECT_ON_START            1017
 #define IDC_EXIT                        1018
 #define IDC_HIDE                        1020
-#define IDC_BUTTON2                     1021
 #define IDC_TRAY_ICON                   1021
 
 // Next default values for new objects
