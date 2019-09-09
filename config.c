@@ -176,12 +176,6 @@ int save_password(const WCHAR *password)
 {
 	return set_ini_value(L"SETTINGS",L"PASSWORD",password);
 }
-int save_connect_discord(int val)
-{
-	WCHAR tmp[20]={0};
-	_snwprintf(tmp,_countof(tmp),L"%u",val);
-	return set_ini_value(L"SETTINGS",L"CONNECT",tmp);
-}
 
 const char *get_user_name()
 {
@@ -274,22 +268,22 @@ int load_window_pos(WINDOWPLACEMENT *win)
 	return result;
 }
 
-int load_enable_discord()
+int load_connect_on_start()
 {
 	int result=FALSE;
 	WCHAR tmp[20]={0};
 	int res;
-	res=get_ini_wchar_str(L"SETTINGS",L"ENABLE_DISCORD",tmp,_countof(tmp));
+	res=get_ini_wchar_str(L"SETTINGS",L"CONNECT_ON_START",tmp,_countof(tmp));
 	if(res){
 		result=_wtoi(tmp);
 	}
 	return result;
 }
-int save_enable_discord(int val)
+int save_connect_on_start(int val)
 {
 	WCHAR tmp[20]={0};
 	_snwprintf(tmp,_countof(tmp),L"%u",val&1);
-	return set_ini_value(L"SETTINGS",L"ENABLE_DISCORD",tmp);
+	return set_ini_value(L"SETTINGS",L"CONNECT_ON_START",tmp);
 }
 
 

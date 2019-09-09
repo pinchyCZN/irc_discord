@@ -11,6 +11,11 @@
 #include "libstring.h"
 
 #pragma warning(disable:4996)
+#ifdef _DEBUG
+#	define DBGPRINT printf
+#else
+#	define DBGPRINT void
+#endif
 
 static HINSTANCE g_hinstance=0;
 
@@ -48,8 +53,8 @@ static struct CONTROL_ANCHOR anchor_log_discord[]={
 };
 static struct CONTROL_ANCHOR anchor_main[]={
 	{IDC_TAB_SHEET,ANCHOR_LEFT|ANCHOR_RIGHT|ANCHOR_TOP|ANCHOR_BOTTOM,0,0,0},
-	{IDOK,ANCHOR_LEFT|ANCHOR_BOTTOM,0,0,0},
-	{IDCANCEL,ANCHOR_RIGHT|ANCHOR_BOTTOM,0,0,0},
+	{IDC_HIDE,ANCHOR_LEFT|ANCHOR_BOTTOM,0,0,0},
+	{IDC_EXIT,ANCHOR_RIGHT|ANCHOR_BOTTOM,0,0,0},
 };
 
 void open_console()
@@ -158,8 +163,11 @@ int init_settings(HWND hwnd)
 			result=TRUE;
 		}
 	}
-	if(load_enable_discord()){
-		CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
+	{
+		int flag=BST_UNCHECKED;
+		if(load_connect_on_start())
+			flag=BST_CHECKED;
+		CheckDlgButton(hwnd,IDC_CONNECT_ON_START,flag);
 	}
 	{
 		int val=get_irc_port();
@@ -186,7 +194,7 @@ int save_settings(HWND hwnd)
 	SLIST list[]={
 		{IDC_USER_NAME,&save_user_name,0},
 		{IDC_PASSWORD,&save_password,0},
-		{IDC_ENABLE_DISCORD,&save_enable_discord,1},
+		{IDC_CONNECT_ON_START,&save_connect_on_start,1},
 		{IDC_IRC_PORT,&save_irc_port,2},
 	};
 #pragma warning(pop)
@@ -230,6 +238,19 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 				SendMessage(hpwd,EM_SETPASSWORDCHAR,g[0],0);
 			}
 			init_settings(hwnd);
+			if(BST_CHECKED==IsDlgButtonChecked(hwnd,IDC_CONNECT_ON_START)){
+				CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
+				start_discord();
+			}
+		}
+		break;
+	case WM_SHOWWINDOW:
+		if(wparam && 0==lparam)
+		{
+			HWND hbutton=GetDlgItem(hwnd,IDC_ENABLE_DISCORD);
+			if(hbutton){
+				SetFocus(hbutton);
+			}
 		}
 		break;
 	case WM_COMMAND:
@@ -475,7 +496,7 @@ static int get_hedit_list()
 	return 0;
 }
 
-int init_dlg_pos(HWND hwnd)
+static int init_dlg_pos(HWND hwnd)
 {
 	WINDOWPLACEMENT wp={0};
 	RECT rect={0};
@@ -496,23 +517,49 @@ int init_dlg_pos(HWND hwnd)
 	return TRUE;
 }
 
-int end_dialog(HWND hwnd)
+static int create_tray_icon(HWND hwnd,HICON hicon)
+{
+	NOTIFYICONDATA nid={0};
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hwnd;
+	nid.uID = IDC_TRAY_ICON;
+	nid.uCallbackMessage = WM_APP;
+	nid.hIcon = hicon;
+	nid.uFlags = NIF_ICON|NIF_MESSAGE;
+	return Shell_NotifyIcon(NIM_ADD,&nid);
+}
+
+static int delete_tray_icon(HWND hwnd)
+{
+	NOTIFYICONDATA nid={0};
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = hwnd;
+	nid.uID = IDC_TRAY_ICON;
+	return Shell_NotifyIcon(NIM_DELETE,&nid);
+}
+
+static int end_dialog(HWND hwnd)
 {
 	WINDOWPLACEMENT wp={0};
 	wp.length=sizeof(wp);
 	GetWindowPlacement(hwnd,&wp);
 	save_window_pos(&wp);
+	delete_tray_icon(hwnd);
 	PostQuitMessage(0);
 	return TRUE;
 }
 
 static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 {
+#ifdef _DEBUG
+	DBGPRINT(">msg:%04X %08X %08X %08X\n",msg,hwnd,lparam,wparam);
+#endif
 	switch(msg){
 	case WM_INITDIALOG:
 		{
 			HICON hicon;
 			HWND htab=GetDlgItem(hwnd,IDC_TAB_SHEET);
+			SetWindowLong(htab,GWL_EXSTYLE,GetWindowLong(hwnd,GWL_EXSTYLE)|WS_EX_CONTROLPARENT);
 			AnchorInit(hwnd,anchor_main,_countof(anchor_main));
 			add_tab_page(htab,IDD_SETTINGS,&settings_func,"settings");
 			add_tab_page(htab,IDD_LOG_IRC,&log_irc_func,"IRC log");
@@ -527,7 +574,7 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 				SendMessage(hwnd,WM_SETICON,ICON_BIG,(LPARAM)hicon);
 				SendMessage(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)hicon);
 			}
-			//start_discord();
+			create_tray_icon(hwnd,hicon);
 		}
 		break;
 	case WM_NOTIFY:
@@ -543,7 +590,16 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 			}
 		}
 		break;
-	case WM_MOVE:
+	case WM_APP: //system tray msg
+		{
+			int tmsg=lparam;
+			if(WM_LBUTTONDOWN==tmsg){
+				int flag=SW_SHOW;
+				if(IsWindowVisible(hwnd))
+					flag=SW_HIDE;
+				ShowWindow(hwnd,flag);
+			}
+		}
 		break;
 	case WM_SIZE:
 		{
@@ -560,13 +616,19 @@ static BOOL CALLBACK dlg_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 			}
 		}
 		break;
+	case WM_CLOSE:
+		end_dialog(hwnd);
+		break;
 	case WM_COMMAND:
 		{
 			int id = LOWORD(wparam);
 			switch(id){
 			case IDOK:
-				break;
 			case IDCANCEL:
+			case IDC_HIDE:
+				ShowWindow(hwnd,SW_HIDE);
+				break;
+			case IDC_EXIT:
 				end_dialog(hwnd);
 				break;
 			}
@@ -585,8 +647,7 @@ int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show
 	g_hinstance=hinst;
 	InitCommonControls();
 	LoadLibrary("RICHED20.DLL");
-	open_console();
-	//DialogBox(hinst,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,dlg_func);
+	//open_console();
 	hwnd=CreateDialog(g_hinstance,MAKEINTRESOURCE(IDD_MAIN_DLG),NULL,&dlg_func);
 	if(0==hwnd){
 		MessageBoxA(NULL,"Unable to create dialog","ERROR",MB_OK|MB_SYSTEMMODAL);
@@ -600,6 +661,7 @@ int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show
 			int key=msg.wParam;
 			if(VK_TAB==key){
 				int ctrl;
+				printf("tab key\n");
 				ctrl=0x8000&GetKeyState(VK_CONTROL);
 				if(ctrl){
 					int dir=1;
@@ -608,7 +670,6 @@ int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show
 						dir=-1;
 					}
 					next_tab(hwnd,dir);
-					printf("tab key\n");
 					continue;
 				}
 			}else if(VK_F5==key){
@@ -624,7 +685,6 @@ int APIENTRY WinMain(HINSTANCE hinst,HINSTANCE hprev,LPSTR cmd_line,int cmd_show
 		}
 		if(!IsWindow(hwnd) || !IsDialogMessage(hwnd,&msg))
 		{
-			printf("translated msg %08X\n",msg.message);
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}

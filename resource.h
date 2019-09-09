@@ -18,8 +18,12 @@
 #define IDC_EDIT_GATEWAY_LOG            1013
 #define IDC_EDIT_DISCORD_LOG            1014
 #define IDC_IRC_PORT                    1015
-#define IDC_BUTTON1                     1016
 #define IDC_RELOAD                      1016
+#define IDC_CONNECT_ON_START            1017
+#define IDC_EXIT                        1018
+#define IDC_HIDE                        1020
+#define IDC_BUTTON2                     1021
+#define IDC_TRAY_ICON                   1021
 
 // Next default values for new objects
 // 
@@ -27,7 +31,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        108
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1017
+#define _APS_NEXT_CONTROL_VALUE         1022
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -16,10 +16,9 @@ int validate_ini(int show_msgbox);
 int save_user_name(const WCHAR *user);
 int save_password(const WCHAR *password);
 int save_irc_port(int port);
-int save_connect_discord(int val);
 
 int save_window_pos(WINDOWPLACEMENT *);
 int load_window_pos(WINDOWPLACEMENT *);
 
-int load_enable_discord();
-int save_enable_discord(int val);
+int load_connect_on_start();
+int save_connect_on_start(int val);
