@@ -100,18 +100,9 @@ static WCHAR *get_ini_fname()
 	int fname_count;
 	DWORD res;
 	fname_count=sizeof(fname)/sizeof(WCHAR);
-	res=get_cur_dir_ini_fname(fname,fname_count);
+	res=get_exe_dir_ini_fname(fname,fname_count);
 	if(res){
-		if(file_exists(fname)){
-			result=fname;
-		}else{
-			res=get_exe_dir_ini_fname(fname,fname_count);
-			if(res){
-				if(file_exists(fname)){
-					result=fname;
-				}
-			}
-		}
+		result=fname;
 	}
 	return result;
 }
@@ -287,59 +278,41 @@ int save_connect_on_start(int val)
 }
 
 
-int validate_ini(int show_msgbox)
+int validate_ini(HWND hwnd,int show_msgbox)
 {
 	int result=FALSE;
-	WCHAR *f1name=0;
-	WCHAR *f2name=0;
-	WCHAR *msg=0;
-	int fname_count=4096;
-	int msg_count=1024*64;
-	WCHAR *ini_fname=0;
-	ini_fname=get_ini_fname();
-	if(0==ini_fname){
-		f1name=calloc(fname_count,sizeof(WCHAR));
-		f2name=calloc(fname_count,sizeof(WCHAR));
-		msg=calloc(msg_count,sizeof(WCHAR));
-		if(0==msg || 0==f1name || 0==f2name){
-			goto FUNC_ERROR;
-		}
-		get_cur_dir_ini_fname(f1name,fname_count);
-		get_exe_dir_ini_fname(f2name,fname_count);
-		_snwprintf(msg,msg_count,L"INI not found in either:\r\n%s\r\n%s\r\n",f1name,f2name);
-		msg[msg_count-1]=0;
-		if(show_msgbox){
-			MessageBoxW(NULL,msg,L"INI not found\n",MB_OK|MB_SYSTEMMODAL);
-		}else{
-			printf("%S",msg);
-		}
+	static WCHAR *fname;
+	const WCHAR *msg=L"";
+	WCHAR *tmp=0;
+	fname=get_ini_fname();
+	if(0==fname){
+		msg=L"Unable to get INI file name";
+		goto ERROR_VAL;
+	}
+	if(file_exists(fname)){
+		result=TRUE;
 	}else{
-		//check if values are populated
-		int no_user=FALSE;
-		int no_pass=FALSE;
-		const char *tmp;
-		tmp=get_user_name();
-		if(0==tmp[0])
-			no_user=TRUE;
-		tmp=get_password();
-		if(0==tmp[0])
-			no_pass=TRUE;
-		if(no_user || no_pass){
-			msg=calloc(msg_count,sizeof(WCHAR));
-			if(msg){
-				_snwprintf(msg,msg_count,L"%s%s",no_user?L"No user name found in INI\r\n":L"",no_pass?L"No password found in INI\r\n":L"");
-				if(show_msgbox){
-					MessageBoxW(NULL,msg,L"INI Settings error",MB_OK|MB_SYSTEMMODAL);
-				}else{
-					printf("%S",msg);
-				}
+		FILE *f;
+		f=_wfopen(fname,L"wb+");
+		if(f){
+			fclose(f);
+			result=TRUE;
+		}else{
+			int size;
+			size=wcslen(fname)*sizeof(WCHAR);
+			size+=1024;
+			tmp=calloc(size,1);
+			if(tmp){
+				int count=size/sizeof(WCHAR);
+				_snwprintf(tmp,count,L"Unable to create INI file:\r\n%s",fname);
+				msg=tmp;
 			}
 		}
 	}
-
-FUNC_ERROR:
-	if(msg)free(msg);
-	if(f1name)free(f1name);
-	if(f2name)free(f2name);
+ERROR_VAL:
+	if(!result){
+		MessageBoxW(hwnd,msg,L"ERROR",MB_OK|MB_SYSTEMMODAL);
+	}
+	free(tmp);
 	return result;
 }

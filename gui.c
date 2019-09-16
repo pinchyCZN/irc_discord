@@ -128,7 +128,7 @@ static int print_lasterror()
 	return 0;
 }
 
-int init_settings(HWND hwnd)
+static int init_settings(HWND hwnd)
 {
 	int result=FALSE;
 	typedef struct{
@@ -178,7 +178,7 @@ int init_settings(HWND hwnd)
 	return result;
 }
 
-int save_settings(HWND hwnd)
+static int save_settings(HWND hwnd)
 {
 	int result=FALSE;
 	typedef struct{
@@ -202,29 +202,51 @@ int save_settings(HWND hwnd)
 	if(0==hwnd)
 		return result;
 	count=_countof(list);
+	result=TRUE;
 	for(i=0;i<count;i++){
+		int res=FALSE;
 		SLIST *blah=&list[i];
 		int type=blah->type;
 		if(0==type){
 			WCHAR str[256]={0};
 			GetDlgItemTextW(hwnd,blah->id,str,_countof(str));
-			blah->func1(str);
+			res=blah->func1(str);
 		}else if(1==type){
-			int res=IsDlgButtonChecked(hwnd,blah->id);
 			int val=0;
+			res=IsDlgButtonChecked(hwnd,blah->id);
 			if(BST_CHECKED==res)
 				val=1;
-			blah->func2(val);
+			res=blah->func2(val);
 		}else if(2==type){
 			WCHAR tmp[20]={0};
 			int val;
 			GetDlgItemTextW(hwnd,blah->id,tmp,_countof(tmp));
 			val=_wtoi(tmp);
-			blah->func2(val);
+			res=blah->func2(val);
+		}
+		if(!res){
+			result=FALSE;
 		}
 	}
 	return result;
+}
 
+static int validate_settings(HWND hwnd)
+{
+	int result=TRUE;
+	int list[]={IDC_USER_NAME,IDC_PASSWORD,IDC_IRC_PORT};
+	int i,count;
+	count=_countof(list);
+	for(i=0;i<count;i++){
+		char tmp[80]={0};
+		int id=list[i];
+		GetDlgItemTextA(hwnd,id,tmp,sizeof(tmp));
+		if(0==tmp[0]){
+			result=FALSE;
+			break;
+		}
+	}
+	return result;
 }
 
 static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
@@ -239,8 +261,12 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 			}
 			init_settings(hwnd);
 			if(BST_CHECKED==IsDlgButtonChecked(hwnd,IDC_CONNECT_ON_START)){
-				CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
-				start_discord();
+				if(validate_settings(hwnd)){
+					CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_CHECKED);
+					start_discord();
+				}else{
+					CheckDlgButton(hwnd,IDC_CONNECT_ON_START,BST_UNCHECKED);
+				}
 			}
 		}
 		break;
@@ -270,15 +296,34 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 		case IDC_SAVE_SETTINGS:
 			{
 				int code=HIWORD(wparam);
-				if(BN_CLICKED==code)
-					save_settings(hwnd);
+				if(BN_CLICKED==code){
+					if(validate_ini(hwnd,TRUE)){
+						int res=save_settings(hwnd);
+						if(!res){
+							MessageBoxA(hwnd,"Failed to save settings to INI","ERROR",MB_OK|MB_SYSTEMMODAL);
+						}
+					}
+				}
 			}
 			break;
 		case IDC_ENABLE_DISCORD:
 			{
 				int res=IsDlgButtonChecked(hwnd,IDC_ENABLE_DISCORD);
 				if(BST_CHECKED==res){
-					start_discord();
+					const char *msg=0;
+					if(validate_settings(hwnd)){
+						if(save_settings(hwnd)){
+							start_discord();
+						}else{
+							msg="Unable to save settings";
+						}
+					}else{
+						msg="Settings not valid";
+					}
+					if(msg){
+						CheckDlgButton(hwnd,IDC_ENABLE_DISCORD,BST_UNCHECKED);
+						MessageBoxA(hwnd,msg,"ERROR",MB_OK|MB_SYSTEMMODAL);
+					}
 				}
 			}
 			break;
@@ -513,6 +558,34 @@ static int init_dlg_pos(HWND hwnd)
 		clamp_nearest_screen(&wp.rcNormalPosition);
 		SetWindowPlacement(hwnd,&wp);
 	}else{ //center screen
+		int show_def=TRUE;
+		int x=0,y=0;
+		if(w>100 && h>100){
+			HWND htmp=GetDesktopWindow();
+			if(htmp){
+				int sw,sh;
+				GetClientRect(htmp,&rect);
+				sw=rect.right-rect.left;
+				sh=rect.bottom-rect.top;
+				x=sw/2-w/2;
+				y=sh/2-h/2;
+				rect.left=x;
+				rect.top=y;
+				rect.right=rect.left+w;
+				rect.bottom=rect.top+h;
+				clamp_nearest_screen(&rect);
+				x=rect.left;
+				y=rect.top;
+				w=rect.right-rect.left;
+				h=rect.bottom-rect.top;
+				show_def=FALSE;
+			}
+		}
+		if(show_def){
+			ShowWindow(hwnd,SW_SHOW);
+		}else{
+			SetWindowPos(hwnd,NULL,x,y,w,h,SWP_NOZORDER|SWP_SHOWWINDOW);
+		}
 	}
 	return TRUE;
 }

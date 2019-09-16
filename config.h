@@ -11,7 +11,7 @@ extern int enable_dbg_irc;
 const char *get_user_name();
 const char *get_password();
 int get_irc_port();
-int validate_ini(int show_msgbox);
+int validate_ini(HWND hwnd,int show_msgbox);
 
 int save_user_name(const WCHAR *user);
 int save_password(const WCHAR *password);
