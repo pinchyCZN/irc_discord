@@ -251,11 +251,16 @@ int save_password(const WCHAR *password)
 	int result=FALSE;
 	int len;
 	char *tmp;
-	len=wcslen(password)*sizeof(WCHAR);
-	tmp=malloc(len);
+	int pw_size;
+	pw_size=wcslen(password)*sizeof(WCHAR);
+	len=pw_size;
+	if(len<10)
+		len=10;
+	len*=sizeof(WCHAR);
+	tmp=calloc(len,1);
 	if(tmp){
 		char *hex;
-		memcpy(tmp,password,len);
+		memcpy(tmp,password,pw_size);
 		xor_str(tmp,len);
 		hex=data_to_hex(tmp,len);
 		if(hex){

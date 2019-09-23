@@ -249,6 +249,23 @@ static int validate_settings(HWND hwnd)
 	return result;
 }
 
+static WNDPROC orig_edit_proc=0;
+static LRESULT APIENTRY edit_ctrl_proc(HWND hwnd,UINT msg,WPARAM wparam,LPARAM lparam)
+{
+	switch(msg){
+	case WM_KEYDOWN:
+		if('A'==wparam){
+			int k=GetKeyState(VK_CONTROL)&0x8000;
+			if(k){
+				SendMessage(hwnd,EM_SETSEL,0,-1);
+				return 0;
+			}
+		}
+		break;
+	}
+	return CallWindowProc(orig_edit_proc,hwnd,msg,wparam,lparam);
+}
+
 static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lparam)
 {
 	switch(msg){
@@ -268,7 +285,10 @@ static BOOL CALLBACK settings_func(HWND hwnd,UINT msg, WPARAM wparam, LPARAM lpa
 					CheckDlgButton(hwnd,IDC_CONNECT_ON_START,BST_UNCHECKED);
 				}
 			}
-		}
+			orig_edit_proc=(WNDPROC)SetWindowLongPtr(GetDlgItem(hwnd,IDC_USER_NAME),GWL_WNDPROC,(LONG_PTR)&edit_ctrl_proc);
+			orig_edit_proc=(WNDPROC)SetWindowLongPtr(GetDlgItem(hwnd,IDC_PASSWORD),GWL_WNDPROC,(LONG_PTR)&edit_ctrl_proc);
+			orig_edit_proc=(WNDPROC)SetWindowLongPtr(GetDlgItem(hwnd,IDC_IRC_PORT),GWL_WNDPROC,(LONG_PTR)&edit_ctrl_proc);
+	}
 		break;
 	case WM_SHOWWINDOW:
 		if(wparam && 0==lparam)
