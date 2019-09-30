@@ -514,6 +514,16 @@ static HWND add_tab_page(HWND htab,int idd,DLGPROC dlg_proc,char *text)
 	}
 	return result;
 }
+static HWND get_tab_hwnd(const int idd)
+{
+	int i,count=_countof(tab_data);
+	for(i=0;i<count;i++){
+		TAB_DATA *tmp=&tab_data[i];
+		if(idd==tab_data[i].IDD)
+			return tab_data[i].hwnd;
+	}
+	return 0;
+}
 
 static void next_tab(HWND hwnd,int dir)
 {
@@ -634,6 +644,15 @@ static int delete_tray_icon(HWND hwnd)
 static int end_dialog(HWND hwnd)
 {
 	WINDOWPLACEMENT wp={0};
+	HWND hcon=get_tab_hwnd(IDD_SETTINGS);
+	if(hcon){
+		int res=IsDlgButtonChecked(hcon,IDC_ENABLE_DISCORD);
+		if(BST_CHECKED==res){
+			res=MessageBoxA(hwnd,"Connected to discord\r\nOK to exit?\r\n","Warning",MB_OKCANCEL);
+			if(IDOK!=res)
+				return FALSE;
+		}
+	}
 	wp.length=sizeof(wp);
 	GetWindowPlacement(hwnd,&wp);
 	save_window_pos(&wp);
